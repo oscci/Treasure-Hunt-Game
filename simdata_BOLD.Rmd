@@ -1,0 +1,244 @@
+---
+title: "simul_gorilla_data"
+author: "DVM Bishop/P Thompson"
+date: "11/05/20"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+require(tidyverse)
+require(lme4)
+require(lmerTest)
+options(scipen = 999)
+```
+
+## Background
+
+Simulated data from the Treasure Hunt Game to establish power to detect interaction between Condition and Group using lmer.
+Step 1. Simulate a series of Items with a given probability of success that varies by (a) group and (b) item type. 
+Also include estimates of random intercepts for subject and item.
+
+This chunk just uses estimates of effects (in terms of how they affect probability of success) to do a sanity check
+
+```{r makedata}
+initialcheck<-0 #change to 1 to run this chunk
+#This chunk generates simulated data with multiple nested loops and is just kept for historical interest
+# The same effect is obtained in later chunk with vectorised formula
+if (initialcheck==1){
+nItem<-30 #Items per session and condition
+nsub <- 25 #subjects per group, 2 groups
+ncond <- 2 # 2 conditions (repeated and non)
+nsess <- 4 # 4 sessions
+ngroup <- 2
+simdat_orig <- data.frame(matrix(NA, nrow=nItem*nsub*ncond*nsess*ngroup,ncol=6))
+colnames(simdat_orig) <- c('Subject','Group','Session','Item','Condition','Correct')
+sess_effect <- c(.7,.75,.8,.85) #Session effect, estimated as 5% increase in accuracy for each session
+p.interaction <- matrix(c(-.075,.075,
+                             0,  0),nrow=2) #matrix row is condition, column is group.
+#These values are added to sess_effect to define interaction between group and condition
+#The sum of the absolute values of first 2 terms defines the difference in conditions for group 1 as a proportion. The sum of absolute values of last 2 terms does the same for group 2 (set to null effect here).
+#Thus if group 1 values are +/- .075, then we predict a 15% difference in accuracy between the two conditions for group 1 overall. 
+# NB this matrix will also determine the size of any main effect of group and condition
+
+#We are not including any prediction of an interaction with session.
+
+# The following terms for group and condition just refer to the coding of these effects in analysis, and NOT to effect sizes
+groupcode <- c(-1,1)
+condcode <-c(-1,1)
+# These are random effects estimates
+itemeff <- (runif(nItem)-.5)/10 #item-specific effect
+subeff <- (runif(nsub)-.5)/10 #subject specific effect - these are both small probabilities +ve or -ve
+thisrow<-0
+for (sess in 1:nsess){
+  for (group in 1:ngroup){
+     for (sub in 1:nsub){
+      for (cond in 1:ncond){
+         for(Item in 1:nItem){
+       thisrow <- thisrow+1
+        simdat_orig$Subject[thisrow]<-sub+1000*group #use large offset for subject code to ensure no overlap in subject IDs for groups 1 and 2. 
+        #Group 1 will be numbered 1,2,3, etc and Group 2 1001,1002,1003 etc
+         simdat_orig$Group[thisrow]<-groupcode[group]
+         simdat_orig$Item[thisrow]<-Item
+          simdat_orig$Session[thisrow]<-sess
+           simdat_orig$Condition[thisrow]<-condcode[cond]
+           criticalp <- sess_effect[sess]+p.interaction[cond,group]+subeff[sub]+itemeff[Item]
+           response<-0
+           if(runif(1)<criticalp) 
+             {response<-1}
+             simdat_orig$Correct[thisrow]<-response
+      }
+    }
+  }
+  }
+}
+#Simdat2 was used in course of checking simulated data: it crunches data to give proportions correct for each Session/Group/subject/condition
+#It is not used further in analysis
+simdat2 <- aggregate(simdat_orig$Correct, by=list(simdat_orig$Session,simdat_orig$Group,simdat_orig$Subject,simdat_orig$Condition),FUN=mean)
+colnames(simdat2)<-c('Session','Group','Subject','Condition','Correct')
+}
+```
+
+
+
+# Run statistics on the model
+
+
+Following advice from here 
+https://stats.stackexchange.com/questions/58745/using-lmer-for-repeated-measures-linear-mixed-effect-model
+
+```{r runmodel}
+if (initialcheck==1){
+m5 <- lmer(Correct ~ Group*Condition*Session + (1|Subject) + (1|Item), simdat_orig)
+summary(m5)
+
+m6 <- lm(Correct~Group*Condition*Session,simdat_orig) #basic Anova without any random effects
+summary(m6)
+
+
+m5B <- glmer(Correct ~ Group*Condition*Session + (1|Subject) + (1|Item), data = simdat_orig, family = binomial, control = glmerControl(optimizer = "bobyqa"))
+
+}
+
+```
+
+
+
+```{r power_sim}
+data_sims <- function(nItem, nsub, ncond, nsess, ngroup,condeff1,condeff2,sess_effect,randsubs,randitems)
+{
+#Now Vectorised!
+# nItem = Items per session per condition
+# nsub = subjects per group
+# ncond  = 2 conditions (repeated and non)
+# nsess  = 4 sessions
+# ngroup = 2 groups
+# condeff1 = increase/decrease for each condition, group1
+# condeff2 = increase/decrease for each condition, group2
+# sess_effect = estimate of proportion correct for sessions 1,2,3,4 (across all groups/conditions)
+# randsubs = term that sets range for random subjects effect
+# randitems = term that sets range for rand items effect
+  
+#
+groupcode <- c(-1,1)
+condcode <-c(-1,1)
+
+
+simdat<-expand.grid(1:nsub,groupcode,1:nsess,1:nItem,condcode)
+colnames(simdat) <- c('Subject','Group','Session','Item','Condition')
+w<-which(simdat$Group==1)
+simdat$Subject[w] <- simdat$Subject[w]+nsub #codes must be different for subs in 2 groups, so add offset
+w<-which(simdat$Condition==1)
+simdat$Item[w] <- simdat$Item[w]+nItem #codes must be different for items in 2 conditions, so add offset
+simdat$interaction <- 1 #we need to set numeric codes for each combination in interaction in order to use vectorised formula. For 2 x 2, codes are 1,2,3,4
+w<-which(simdat$Condition==1)
+simdat$interaction[w]<-2 #initialise with 1-2
+w<-which(simdat$Group==1)
+simdat$interaction[w]<-simdat$interaction[w]+2 #add 2 for group2, so get values 3-4
+p.interaction <- c(-condeff1/2,condeff1/2,-condeff2/2,condeff2/2)
+#Interaction term devised so that, e.g. if condeff1 is .1, then terms 1-2 sum to this value, ie. -.05 and +.05
+
+simdat$Correct <- 1 #default response is correct
+
+myrands <- runif(nrow(simdat))
+subeff<-runif((nsub*2),-randsubs,randsubs) #one effect per subject - range specified by randsubs
+itemeff<-runif(nItem*2,-randitems,randitems) #one effect per item - range specified by randitems
+simdat$criticalp <- sess_effect[simdat$Session]+p.interaction[simdat$interaction]+subeff[simdat$Subject]+itemeff[simdat$Item]
+simdat$Correct[simdat$criticalp<myrands]<-0
+
+
+return(simdat)
+}
+```
+
+
+
+```{r plotsimsfunction}
+#Check scores are as intended
+plotsims<-function(simdat,nItem,nsub){
+myag <- aggregate(simdat$Correct, by=list(simdat$Session,simdat$Group,simdat$Condition),
+  FUN=mean)
+myagsd <- aggregate(simdat$Correct, by=list(simdat$Session,simdat$Group,simdat$Condition),
+  FUN=sd)
+myag<-cbind(myag,myagsd[,4]/sqrt(nsub))
+colnames(myag)<-c('Session','Group','Condition','p.Corr','se')
+
+
+group1<-filter(myag,Group==-1,Condition==1)
+group2<-filter(myag,Group==1,Condition==1)
+
+plot(group1$Session,group1$p.Corr,type='b',ylim=c(.5,1),xaxt="n",xlab='Session',ylab='percent correct',main=paste0('Nsubs = ',nsub,' : Nitems = ',nItem))
+axis(side=1, at=1:4, line=1)
+lines(group2$Session,group2$p.Corr,type='b',col='red')
+
+group1a<-filter(myag,Group==-1,Condition==-1)
+group2a<-filter(myag,Group==1,Condition==-1)
+lines(group1a$Session,group1a$p.Corr,type='b',lty=2,col='black')
+lines(group2a$Session,group2a$p.Corr,type='b',lty=2,col='red')
+
+# Add a legend
+legend('bottomright', legend=c("DLD_repeated","TD_repeated","DLD_novel", "TD_novel"),
+       col=c("black", "red","black", "red"), lty=c(1,1,2,2), cex=0.8)
+
+
+myagg2<-aggregate(myag$p.Corr, by=list(myag$Group,myag$Condition),FUN=mean)
+colnames(myagg2)<-c('Group','Condition')
+myaggsd<-aggregate(myag$p.Corr, by=list(myag$Group,myag$Condition),FUN=sd)
+myagg2<-cbind(myagg2,myaggsd[,3])
+colnames(myagg2)[3:4]<-c('Mean_p.corr','SD')
+return(myagg2) #little table allows one to look at results from one sim
+}
+```
+
+
+```{r dopower}
+niter <- 500
+Nitemseq<-seq(12,16,4) #specify here the range of values for Nitems (start, end, step)
+nsubseq <-seq(20,20,5) #specify here the range of values for nsub
+sess_effect <- c(.7,.75,.8,.85) #Session effect, estimated as 5% increase in accuracy for each session
+condeff1 <- .075
+condeff2<- 0
+randsubs <- .1
+randitems <-.075
+powerdf<-expand.grid(Nitemseq,nsubseq) #powerdf to hold results
+colnames(powerdf) <- c('nItem','nsub')
+powerdf$power_interaction<-NA #add column to show power
+
+myresults<-vector(mode="numeric",length=niter)  
+myout <- myresults
+
+thisrow<-0
+for (nItem in Nitemseq){
+print(paste('Nitem = ',nItem))
+  for (nsub in nsubseq){
+print(paste('Nsub = ',nsub))
+    thisrow<-thisrow+1
+
+  for(i in 1:niter){
+    if(i/20==round(i/20,0)){ #show progress
+     print(paste0('iteration ',i))
+    }
+    simdat <- data_sims(nItem, nsub, ncond = 2, nsess = 4, ngroup = 2,    condeff1,condeff2,sess_effect,randsubs,randitems) 
+ #NB randsubs and randitems are +/- percentage variation range for these
+    #NB formula can give critical p > 1, depending on settings
+
+ simdat$Session<-simdat$Session-mean(simdat$Session) #centre session
+ if (i==1){ #plot just the first simulated set to check effects
+  myagg2<-plotsims(simdat,nItem,nsub) #function does plot and also saves means for interaction in myagg2, so can be inspected
+  }
+  #run regression
+  mymod <- glmer(Correct ~ Group*Condition*Session + (1|Subject)+(1|Item), data = simdat, family = binomial, control = glmerControl(optimizer = "bobyqa"))
+  myres <- summary(mymod)
+
+  myresults[i]<-myres$coefficients[5,4] #5th row has p-value for interaction term for condition x group
+  }
+  myout <- ifelse(myresults>0.05,0,1)
+power = mean(myout) 
+powerdf$power_interaction[thisrow]<-power
+
+  }
+}
+print(paste0('power = ',power))
+powerfile<-paste('powerdf_N',niter,'_ES',condeff1*10,'_rands',randsubs,'randi',randitems,'.csv')
+write.csv(powerdf,powerfile,row.names=F)
+```

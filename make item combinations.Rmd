@@ -17,8 +17,9 @@ Currently our stimulus pool is 32 pictured target words
 Some questions that arise re item types.
 a) With 'between' - we could include both vertical and horizontal grid positions - currently it is just horizontal
 b) I have reworded level 5 items so it is not 2 sentences, but instead uses the format, e.g. the X is above the Y and next to the Z. Not sure if that was what Nicole used, but it seems more natural
+c) Note that with the Repeated Items, it is currently set up to select at random the picture that will be pre-placed in the grid (where there is a preplaced item).  So the sentence is repeated but the display may vary. It would be possible to alter this - probably easiest to just do this at the final stage after spreadsheet created, at which point one could identify repeated items and just overwrite them so that each of the items was constant. But I think we are mostly interested in the impact of improved comprehension from hearing repeated sentence, and that to have this to some extent dissociated from the visual display is a good thing. Needs clarifying when describing methods.
 
-## Updates 2nd June 2020
+## Updates 2nd June 2020 (ALL DONE NOW)
 Now comparing outputs to Nicole spreadsheets:
 For level 1, 2 corrections to be made:  
 1. the already placed item should not be included in the AnswerChoice field
@@ -495,7 +496,7 @@ maxsession <- 4
 ```
 
 
-Make a little spreadsheet with just 2 items per level for testing with Gorilla
+Make a little spreadsheet with just N items per level for testing with Gorilla
 
 ```{r maketestsheet}
 #Now set to save 4 at each level, but could alter this

@@ -1,0 +1,587 @@
+---
+title: "Treasure Hunt Analysis"
+author: "DVM Bishop & Adam Parker"
+date: "10/02/2020"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+# Location game accuracy
+
+This R markdown details the analysis for Response Times analysis detailed in the preregistration for the project "Impact of Training Schedules on Language Learning in Children". This study was preregistered on the Open Science Framework (https://osf.io/ykacn/). 
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+# libraries 
+library("effects")
+library("dplyr")
+library("lme4")
+library("yarrr")
+library("ggplot2")
+library("pscl")
+library("MASS")
+library("COMPoissonReg")
+library("VGAM")
+library("glmmTMB")
+library("mgcv")
+library("readr")
+library("knitr")
+library("ggpubr")#for density plots
+```
+
+## Output file from Gorilla
+
+This is csv file with a row for each datapoint in the series of trials. Subjects, identified by random letter strings, are stacked on top of each other.  We start by reading the data and cutting out unwanted information. This file was combined using the "combined_files_v13.R" script and cases meeting our data exclusion criteria were removed.
+
+```{r readdata}
+child_RT_full <- read_csv("/Users/dorothybishop/Dropbox/location_game_items/96 participants/Treasure_Hunt_Data_Final.csv")
+
+#rename variables
+wc<-which(names(child_RT_full) %in% c("Event Index","Time Elapsed","Time Taken","Clue1"))
+names(child_RT_full)[wc]<-c("event","time.elapsed","RT","item")
+
+
+# relabel variables and set some to factors
+child_RT_full$subject <- as.factor(child_RT_full$subject)
+child_RT_full$item <- as.factor(child_RT_full$item)
+child_RT_full$condition <- as.factor(child_RT_full$condition)
+child_RT_full$Attempts <- as.numeric(child_RT_full$Attempts)
+child_RT_full$Mistakes <- as.numeric(child_RT_full$Mistakes)
+
+child_RT_full$RT <- as.numeric(child_RT_full$RT)
+child_RT_full$event <- as.numeric(child_RT_full$event)
+child_RT_full$Vocab <- as.factor(child_RT_full$Vocab)
+levels(child_RT_full$Vocab) <- c("preposition", "vocabulary")
+
+child_RT_full$subcode<-paste0(child_RT_full$condition,"_",levels(child_RT_full$subject))
+
+```
+
+```{r reformatdf}
+# Make a column that has same number for all rows that belong to one trial
+# In a loop - a bit slow, but easy to understand and program
+
+# Redo code for PLACE so we can identify first place response - we'll use this only for correct trials, but it gives an RT for the start of any response, which is less confounded by number/distance to place things
+# In same loop, make columns for N slots open, and N elements to move (for vocab these are always 1 and 1, but for prepositions, this varies)
+
+# NB because 'between' has different correct options, it will get N elements count of 4
+
+# Would be good to have Gorilla record the spreadsheet, as we could then easily categorise items.
+# We could identify the prepositions from string manipulation of 'item' if necessary....
+
+i=1
+child_RT_full$trial<-NA #initialise trial col
+child_RT_full$slots <- NA
+child_RT_full$elements <- NA
+
+#find columns with grid slots 
+gridcols<-which(colnames(child_RT_full)%in% c('A1','A2','A3','A4','B1','B2','B3','B4',
+'C1','C2','C3','C4','D1','D2','D3','D4'))
+elementcols <- which(colnames(child_RT_full) %in% c('Answer1Cell','Answer2Cell','Answer3Cell','Answer4Cell'))
+
+child_RT_full$trial[1]<-1
+nrow<-nrow(child_RT_full)
+
+i=0
+for (n in 1:nrow){
+  if (n>1){
+  if(child_RT_full$subject[n] != child_RT_full$subject[(n-1)])
+  {i = 0}
+  }
+  if(child_RT_full$Type[n]=='START PUZZLE') #counter simply increments on each 'START PUZZLE' row
+  {i <- i +1
+  child_RT_full$Type[n+1] <- 'PLACE1'} #next event after START PUZZLE is distinguished
+  child_RT_full$trial[n] <- i
+  
+  child_RT_full$slots[n] <- length(which(child_RT_full[n,gridcols]=='open'))
+  child_RT_full$elements[n]<-4-length(which(is.na(child_RT_full[n,elementcols])))
+}
+
+# Now we'll aim to create a new file with just the information we need, in a sensible order
+# Start by selecting column of interest - we'll do this in a loop so we can control the order of columns 
+wanted<-c("X1"  ,"subject" , "month_age","event"  ,"trial","Vocab","condition", "Type", "item","slots","elements","time.elapsed", "RT",  "Attempts","Correct","Mistakes")
+mycol <- vector() #initialise blank vector
+for (i in 1:length(wanted)){
+  mycol<-c(mycol,which(names(child_RT_full) == wanted[i])) #find colnumbers of wanted
+}
+child_RT_wanted <- child_RT_full[,mycol]
+
+
+#  glimpse(child_RT_wanted) #uncomment to see list of contents of cols
+allsub<-unique(child_RT_wanted$subject)
+nsub <- length(allsub) #count the number of subjects
+print(paste("Number of subjects = ",nsub) ) 
+```
+
+
+```{r prunetrials}
+
+child_RT_short <- filter(child_RT_wanted,Type %in% c('PLACE1','PUZZLE COMPLETE'))
+child_RT_pick <- NA #initialise column to hold RT for picking first item
+# We'll now move the time.elapsed alongside PUZZLE COMPLETE
+w<-which(child_RT_short$Type=='PUZZLE COMPLETE')
+child_RT_short$RTpick[w]<-child_RT_short$time.elapsed[(w-1)]
+
+# Now can get rid of rows with PLACE1
+child_RT_short <- filter(child_RT_short,Type == c('PUZZLE COMPLETE'))
+# Create new column for correct RT.
+# Puzzling that time elapsed and RT are not the same for PLACE1, but are for PUZZLE COMPLETE
+# We think this is an error, but it does not affect us as we have not used that RT.
+
+#Now split into vocab and preposition files, as these are so different that it is best to treat them separately
+
+vocabdat <- filter(child_RT_short,Vocab=='vocabulary')
+prepdat <- filter(child_RT_short,Vocab=='preposition')
+
+#Quick check of RTs: correct only - confirms that RTpick equals RT
+ vocabcorr<-filter(vocabdat,Correct==1)
+#plot(vocabcorr$RT[1:2000],vocabcorr$RTpick[1:2000]) #uncomment to see this
+#abline(a=0,b=1)
+```
+
+Preposition types are identified by hard coding here: beware if using with different spreadsheets. Here we just export a list of all items, and manually assign to item type.
+NB This is not used in Nicole analysis, but analysing this way made it clear there would be problems in using the preposition task to look at learning. 
+
+```{r findpreptype}
+write.csv(levels(prepdat$item),'preptypes.csv')
+#####!!!!!  HARD CODED !!!! BEWARE
+preptype<-c(0,0,0,0,0,0,0,0,0,0,3, 4, 1, 2, 2, 3, 2, 3, 1, 2, 3, 1, 3, 3, 1, 4, 3, 3, 4, 1, 2, 3, 1, 3, 1, 3, 1, 2, 3, 2, 2, 2, 3, 1, 4, 4, 3, 3, 3, 1, 4, 3, 3, 1, 4, 2, 3, 4, 1, 3)
+#The first 10 are vocab items
+#1 = above
+#2 = below
+#3 = between
+#4 = next to +
+prepdat$senttype <- 0
+for (i in 1:nrow(prepdat)){
+  m <- which(levels(prepdat$item)==prepdat$item[i])
+  prepdat$senttype[i] <- preptype[m]
+}
+
+```
+For vocabulary, the main measure of learning is accuracy, so we'll first plot that to see how it changes with training, and whether it differs by conditions.
+In fact, 'attempts' could be used to give a more graded measure of accuracy.
+Let's break into blocks of 10 trials and measure total attempts within a block.
+
+```{r makeblock}
+# Because of interleaving, trial number can't be used to recode to block, but can just paste in code that identifies 10 trials in a row.
+# NB this is referred to a 'block' here, but for the interleaved items, they will be alternate trials. Since we have pulled vocabulary data into a separate file, the method will work for these data as well as for those from blocked condition.
+nrow <- nrow(vocabdat)
+vocabdat$block <-0 #initialise
+blocksize <- 10
+blockassign<- rep(seq(1:30),1,each=blocksize) # makes 111112222233333 etc 30 times
+
+for (s in 1:nsub){
+  thissub <- allsub[s]
+  w <- which(vocabdat$subject==thissub) #find row range for each subject
+  firstrow<-w[1]
+  lastrow<-max(w)
+  sublen <-lastrow-firstrow+1
+  vocabdat$block[w]<-blockassign[1:sublen] #paste in as many rows from blockassign as needed
+}
+
+# 
+myblockvoc <- as.data.frame.matrix(table(vocabdat$subject,vocabdat$block)) #shows how many blocks done by each.
+colnames(myblockvoc)<-c('N.b1','N.b2','N.b3','N.b4','N.b5','N.b6','N.b7')
+myblockvoc$b1 <-0
+myblockvoc$b1[myblockvoc$N.b1==10]<-1
+myblockvoc$b2 <-0
+myblockvoc$b2[myblockvoc$N.b2==10]<-1
+myblockvoc$b3 <-0
+myblockvoc$b3[myblockvoc$N.b3==10]<-1
+myblockvoc$b4 <-0
+myblockvoc$b4[myblockvoc$N.b4==10]<-1
+myblockvoc$b5 <-0
+myblockvoc$b5[myblockvoc$N.b5==10]<-1
+#Most have done 4  ; can vary the N analysed for plots below by changing selection.
+
+Ncomplete <- colSums(myblockvoc[,8:12])
+print('N completing given number of Vocabulary blocks:') 
+print(Ncomplete)
+
+#find those who did 4 or more blocks
+includesubs<-which(myblockvoc$b4==1)
+subinclude <- row.names(myblockvoc)[includesubs]
+
+
+
+
+# Repeat block analysis for prepositions (not needed for analysis now)
+nrow <- nrow(prepdat)
+prepdat$block <-0 #initialise
+blocksize <- 10
+blockassign<- rep(seq(1:30),1,each=blocksize) # makes 111111111122222222223333333333 etc 30 times
+
+for (s in 1:nsub){
+  thissub <- allsub[s]
+  w <- which(prepdat$subject==thissub) #find row range for each subject
+  firstrow<-w[1]
+  lastrow<-max(w)
+  sublen <-lastrow-firstrow+1
+  prepdat$block[w]<-blockassign[1:sublen] #paste in as many rows from blockassign as needed
+}
+
+# 
+#table(prepdat$subject,prepdat$block) #shows how many blocks done by each.
+
+
+```
+
+
+
+## Process RTs
+
+We anticipate non-normal RT data.
+We will inspect the data and compare impact of various ways of handling this.
+To do this we will first just focus on the correct responses to Vocabulary items.
+We will look at these separately for each subject.
+
+Two functions created to a) remove outliers, and b) plot data
+
+```{r Hoaglin_iglewicz}
+#Outliers are defined in terms of quartiles: those that are more than 2.2 times away #from range which is difference between 25th and 75th centile
+#Hoaglin, D. C., & Iglewicz, B. (1987). Fine tuning some resistant rules for outlier labeling. Journal of American Statistical Association, 82(400), 1147–1149
+
+HIoutliers<-function(myvector,cutoff){
+#standard cutoff is 2.2, but can be lower if all outliers are in one diretion
+lower_quartile <- quantile(myvector, probs=0.25, na.rm="TRUE")
+upper_quartile <- quantile(myvector, probs=0.75, na.rm="TRUE")
+quartile_diff <- upper_quartile - lower_quartile
+
+lower_limit <- lower_quartile - cutoff*quartile_diff
+upper_limit <- upper_quartile + cutoff*quartile_diff
+myvector_marked<-myvector
+myout<-data.frame(myvector,myvector_marked)
+w<-c(which(myvector_marked<lower_limit),which(myvector_marked>upper_limit))
+
+myout$myvector_marked[w]<-NA #returns a dataframe which has original data in first column, and same data with outliers removed in 2nd column
+
+return(myout)
+}
+```
+
+# Function to check normality for each subject/vocab
+```{r normplot}
+#This now modified to be separate for vocab 
+mydensityplot <- function(mydf,sub1,sub2,RTcol,showplot){ #specify df,range of subs and column number to inspect
+okcount<-0 #initialise counter for ns p-values, i.e. normal 
+mycounter<-0 #initialise counter for N times through loop
+
+  par(mfrow=c(2,2)) #output in 2 rows, 2 cols
+  for (i in sub1:sub2){
+    subname<-allsub[i]
+    mycounter<-mycounter+1
+     myrows<-which(mydf$subject==subname) #select rows for this sub
+     temp<-data.frame(mydf[myrows,])
+    myRT<-temp[,RTcol]
+
+    d=density(myRT,na.rm=TRUE)
+    if(showplot==1){
+      title<- paste0(subname,': ', levels(temp$Vocab)[j],' \nNormality test p-value: ',round(shapiro.test(myRT)$p.value,3))
+    plot(d,main = title,xlab=names(temp)[RTcol])
+    }
+    if(shapiro.test(myRT)$p.value>.05){
+      okcount<-okcount+1
+    }
+  }
+
+mymessage<-paste0(okcount,' out of ',mycounter,' meet p>.05 criterion for normality')
+return(mymessage)
+}
+
+
+```
+
+We use these two functions to consider how transforming data and removing outliers affects normality of RT distribution.
+This involves creating additional columns with different versions of RT.
+
+```{r compareRT}
+
+#Start with regular RT for correct only
+mydf <- vocabdat
+sub1 <- 1
+sub2 <- 96
+RTcol <- which(names(mydf)=='RTpick')
+mydf <- filter(mydf,Mistakes==0)
+showplot <-0
+ mymessage<-mydensityplot(mydf,sub1,sub2,RTcol,showplot)
+ print(paste0('Raw RT pick: ',mymessage))
+       
+ #Truncation
+ RTlimit<-20000
+ RTlowlimit<-200
+ #Before outlier removal by formula, just reset any > limit (e.g. 20000 (20 sec)) to that limit
+ vocabdat$RTpick.a <- vocabdat$RTpick #initialise column
+ w<-c(which(vocabdat$RTpick.a > RTlimit),which(vocabdat$RTpick.a<RTlowlimit))
+ vocabdat$RTpick.a[w] <- RTlimit
+ #recheck normality
+ RTcol <- which(names(vocabdat)=='RTpick.a')
+mydf <- filter(vocabdat,Mistakes==0)
+showplot <-0
+ mymessage <- mydensityplot(mydf,sub1,sub2,RTcol,showplot)
+  print(paste0('Censored RTpick (RTpick.a): ',mymessage))
+  
+ #Remove outliers with Hoaglin-Iglewicz
+ HIlimit <- 1.65 #this num is the distance from interquartile range used for exclusion
+ # -2.2 is recommended level, but that is with outliers at both ends
+
+  RTcol<-which(names(vocabdat)=='RTpick.a') #number of column with RTcorr.a data
+ myvector <-unlist(vocabdat[,RTcol]) #unlist needed as must be vector, not data frame
+ RTkeep<-HIoutliers(myvector,HIlimit)  #run HIoutliers function
+ vocabdat$RTpick.k<-RTkeep[,2] #add a column which has NA for RT outliers
+
+RTcol<-which(names(vocabdat)=='RTpick.k')
+mydf <- filter(vocabdat,Mistakes==0)
+mymessage <- mydensityplot(mydf,sub1,sub2,RTcol,showplot)
+print(paste0('Outlier exclusion Hoaglin Iglewicz 1.65 (RTpick.k): ',mymessage))
+ 
+ #THis still has several with a long tail
+ #Try with log transform - apply first to all RTs (as may use these later)
+ vocabdat$logRTpick.k<-log(vocabdat$RTpick.k)
+
+RTcol<-which(names(vocabdat)=='logRTpick.k')
+mydf <- filter(vocabdat,Mistakes==0)
+mymessage <- mydensityplot(mydf,sub1,sub2,RTcol,showplot)
+print(paste0('Logs after censoring/HI outliers (logRTpick.k): ',mymessage))
+
+#We preregistered analysis using RTpick.k, so will use that (even though the log version is more normal)
+```
+
+```{r excludesubs}
+#make vocshort which has only included cases, and only up to block4
+
+vocshort<-vocabdat[vocabdat$subject%in%subinclude,]
+vocshort<-vocshort[vocshort$block<5,] 
+prepshort<-prepdat[prepdat$subject%in%subinclude,]
+prepshort<-prepshort[prepshort$block<5,]
+
+```
+
+```{r oldyoung}
+#Look at data for young and old - this is not preregistered, but can be used for exploratory analysis. 
+
+vocabdatold <- filter(vocshort,month_age>95)
+vocabdatyoung <- filter(vocshort,month_age<96)
+prepdatold <- filter(prepshort,month_age>95) 
+prepdatyoung <- filter(prepshort,month_age<96)
+
+```
+Next step is to consider how best to measure learning.
+We'll plot the data to see what looks like best measure
+
+```{r roughplot}
+# Division into old and young is not used for Nicole's plots, but retained here as an option
+doplot <- function(oldfile,youngfile,depname,ylim,mystat,alltogether,legx,legy,mymain){
+
+if(alltogether==1){ #ignore age bands
+  oldfile <- rbind(oldfile,youngfile)
+}
+myaggold <- aggregate(oldfile$myX, by=list(oldfile$block,oldfile$condition),
+  FUN=mean, na.rm=TRUE)
+if(mystat=='Median'){
+  myaggold <- aggregate(oldfile$myX, by=list(oldfile$block,oldfile$condition),
+  FUN=median, na.rm=TRUE)
+}
+colnames(myaggold)<-c('block','condition','dv')
+
+vocabiold <- filter(myaggold,condition=='interleaved')
+vocabbold <- filter(myaggold,condition=='blocked')
+
+if(alltogether==0){
+myaggyoung <- aggregate(youngfile$myX, by=list(youngfile$block,youngfile$condition),
+  FUN=mean, na.rm=TRUE)
+if(mystat=='Median'){
+  myaggyoung <- aggregate(youngfile$myX, by=list(youngfile$block,youngfile$condition),
+  FUN=median, na.rm=TRUE)
+}
+colnames(myaggyoung)<-c('block','condition','dv')
+vocabiyoung <- filter(myaggyoung,condition=='interleaved')
+vocabbyoung <- filter(myaggyoung,condition=='blocked')
+}
+
+
+#Plot overall mean attempts by block
+
+plot(vocabiold$block,vocabiold$dv,type='b',ylim =ylim,main=mymain,xlab='Block of 10',ylab=depname)
+lines(vocabbold$block,vocabbold$dv,type='b',col='red')
+legend(legx,legy, legend=c("Blocked", "Interleaved"),
+       col=c("red", "black"), lty=1, cex=0.8)
+if(alltogether==0){
+lines(vocabiyoung$block,vocabiyoung$dv,type='b',pch=15)
+lines(vocabbyoung$block,vocabbyoung$dv,type='b',pch=15,col='red')
+  }
+
+# Just a rough plot for initial inspection - really need something better with indication of variation
+}
+```
+
+```{r makerough}
+#myX is Dummy column to be used in aggregate and plot
+vocabdatold$myX <- vocabdatold$Attempts
+vocabdatyoung$myX <- vocabdatyoung$Attempts
+oldfile<-vocabdatold
+youngfile<-vocabdatyoung
+mystat <- 'Mean'
+depname<-paste(mystat,'attempts')
+ylim <- c(1,2.5)
+legx<-1.5 #location of legend on x axis
+legy<-2
+alltogether <- 0 #separate lines for old and young
+#doplot(oldfile,youngfile,depname,ylim,mystat,alltogether,legx,legy,mymain)
+alltogether <- 1 #combines old and young
+mymain <- 'Accuracy'
+doplot(oldfile,youngfile,depname,ylim,mystat,alltogether,legx,legy,mymain)
+
+
+
+# repeat for RTpick
+vocabdatold$myX <- vocabdatold$RTpick.k
+vocabdatyoung$myX <- vocabdatyoung$RTpick.k
+oldfile<-filter(vocabdatold,Mistakes==0) #only correct items
+youngfile<-filter(vocabdatyoung,Mistakes==0)
+mystat <- 'Median'
+depname<-paste(mystat,'RT (ms)')
+ylim <- c(5000,10000)
+alltogether <- 0 #separate lines for old and young
+mymain <-'Reaction time'
+legx=2
+legy=9000
+#doplot(oldfile,youngfile,depname,ylim,mystat,alltogether,legx,legy,mymain)
+
+alltogether <- 1
+doplot(oldfile,youngfile,depname,ylim,mystat,alltogether,legx,legy,mymain)
+
+# An earlier version of script had preposition data, but this is omitted here because
+# it just confirmed that this is messy because of the very different types of items
+# used in the different blocks. (Can be found on version 1 on Github if necessary)
+#----------------------------------------------------------------------------------
+
+```
+
+
+
+
+
+Look at slopes for these RT correct data, median by block by subject.
+
+```{r analyseslopes}
+#Slopes for correct responses based on median RTpick.k by block
+corrvocab <- filter(vocshort,Mistakes==0)
+vocmedians<-aggregate(RTpick.k~ block+subject+condition, data= corrvocab, FUN= mean)
+colnames(vocmedians)<-c('block','subject','condition','RTpick.k')
+
+#create column for age band, also age in months for later Ancova
+vocmedians$ageband <- 1
+vocmedians$age <- NA
+for (i in 1:nrow(vocmedians)){
+  w<-vocmedians$subject[i]
+  w1<-which(vocshort$subject ==w)
+  thisage<-vocshort$month_age[w1[1]]
+  if(thisage>95)
+    {vocmedians$ageband[i] <- 2}
+  vocmedians$age[i] <- thisage
+}
+
+vocmedians$slope <- NA #dummy column
+vocmedians$gain <- NA
+
+ blocklist <- seq(1:4)
+ nsubkeep<-length(subinclude)
+for (i in 1:nsubkeep){ #loop through subjects
+  subname<-subinclude[i] #find subject ID
+   myrows<-which(vocmedians$subject==subname) #select rows for this sub
+   temp<-vocmedians$RTpick.k[myrows] #make a little vector with this subject's data
+   theseblocks<-vocmedians$block[myrows]
+   mylm <- summary(lm(temp~theseblocks))
+   vocmedians$slope[myrows[1]]<- mylm$coefficients[2,1]
+}
+print("one-group t-test vs zero for slopes")
+t.test(vocmedians$slope[vocmedians$condition=='blocked'])
+t.test(vocmedians$slope[vocmedians$condition=='interleaved'])
+
+
+print("T test comparing interleaved and blocked slopes")
+t.test(vocmedians$slope ~ vocmedians$condition)
+
+
+pirateplot(slope~condition,data=vocmedians)
+
+
+```
+
+```{r accuracygain}
+#Mistakes are inverse of correct; aggregate by block
+
+vocerrs<-aggregate(Mistakes~ block+subject+condition, data= vocshort, FUN= mean)
+colnames(vocerrs)<-c('block','subject','condition','mistakes')
+#create column for age band, also age in months for later Ancova
+vocerrs$ageband <- 1
+vocerrs$age <- NA
+for (i in 1:nrow(vocerrs)){
+  w<-vocerrs$subject[i]
+  w1<-which(vocshort$subject ==w)
+  thisage<-vocshort$month_age[w1[1]]
+  if(thisage>95)
+    {vocerrs$ageband[i] <- 2}
+  vocerrs$age[i] <- thisage
+}
+
+vocerrs$decline <-NA
+for (i in seq(1,nrow(vocerrs),by=4)){
+  vocerrs$decline[i]<-vocerrs$mistakes[i+3]-vocerrs$mistakes[i]
+}
+
+print("one-group t-test vs zero for accuracy gain")
+t.test(vocerrs$decline[vocerrs$condition=='blocked'])
+t.test(vocerrs$decline[vocerrs$condition=='interleaved'])
+
+print("T test comparing interleaved and blocked error decline block 1 to 4")
+t.test(vocerrs$decline ~ vocerrs$condition)
+
+
+pirateplot(decline~condition,data=vocerrs)
+
+# Create column with first block with no errors
+vocerrs$blocklearned<-NA #initialise
+vocerrs$blocklearned[seq(1,nrow(vocerrs),4)] <- 5 #default to not learned
+for (i in 4:1){
+  w<-intersect(which(vocerrs$mistakes==0),which(vocerrs$block==i))
+  vocerrs$blocklearned[w-i+1]<-i
+}
+
+```
+
+
+## ANCOVA for Nicole's Dissertation
+
+```{r NicoleANCOVA}
+# anova
+aov_slope <- aov(slope~ condition + age + Error(subject), data = vocmedians)
+summary(aov_slope)
+
+aov_acc <- aov(blocklearned~ condition + age + Error(subject), data = vocerrs)
+summary(aov_acc)
+
+meanblocklearned <- aggregate(vocerrs$blocklearned, by=list(vocerrs$condition),
+  FUN=mean, na.rm=TRUE)
+meanblocklearnedsd <- aggregate(vocerrs$blocklearned, by=list(vocerrs$condition),
+  FUN=sd, na.rm=TRUE)
+colnames(meanblocklearned)<-c('Condition','Mean')
+meanblocklearned$SD<-meanblocklearnedsd$x
+n1<-nrow(filter(vocerrs,condition=='blocked'))
+n2<-nrow(vocerrs)-n1
+meanblocklearned$N<-c(n1/4,n2/4)
+print('Block by which all items correct')
+print(meanblocklearned)
+```
+
+```{r ageanalysis}
+# anova
+#Just checking whether those retained in the two conditions are similar in age - they are
+aggregate(vocmedians$age,by=list(vocmedians$condition),FUN=mean,na.rm=TRUE)
+
+#Equivalent to Nicole's exploratory analysis - though this seems less useful now?
+aov_slopeage <- aov(slope~ condition*ageband + Error(subject), data = vocmedians)
+summary(aov_slopeage)
+
+```

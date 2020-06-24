@@ -1,0 +1,375 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This note book processes pilot data for the BOLD study. 
+
+The experiment involves participants completing a series of ability measures followed by a game in which participants judge a series of spatial prepositions. Participants complete this over four days. Across each day we look at the effect that reading novel and repeated items has on accuracy. 
+
+**Tasks included in day 1 are:**
+
+- Matrix reasoning
+
+- Vocabulary task
+
+- Grammaticality judgement
+
+- Serial memory task
+
+- Pretest measure of preposition judgement
+
+- A thresholding attempt at the game
+
+**Over the next four days, participants complete the Treasure Hunt game and then a post-test preposition task.**
+
+Below we process each task and run some proposed anlaysis. First thing to do is collated the data into a workable data frame.
+
+```{r merge}
+# packages
+library(ggplot2)
+library(tidyverse)
+library(lme4)
+library(dplyr)
+
+# first merge session 1 with all offline
+myfiles = list.files(path="./day1", pattern="*.csv", full.names=TRUE)
+session1.dat = suppressWarnings(suppressMessages(plyr::ldply(myfiles, readr::read_csv)))
+# now merge session 2
+myfiles.2 = list.files(path="./day2", pattern="*.csv", full.names=TRUE)
+session2.dat = suppressWarnings(suppressMessages(plyr::ldply(myfiles.2, readr::read_csv)))
+# now prepare some basic info
+session1.dat$subject <- as.factor(session1.dat$`Participant Public ID`)
+session2.dat$subject <- as.factor(session2.dat$`Participant Public ID`)
+```
+
+## Matrix reasoning
+
+Here we probably just want an average of participants correct answers.
+
+```{r mat}
+# first thing to do is to select relevant cases
+mat.dat <- session1.dat[session1.dat$`Task Name`== "Matrix Reasoning",]
+# now make sure we only have repsonses
+mat.dat <- mat.dat[mat.dat$`Zone Type`== "response_button_text",]
+# now only attempts
+mat.dat <- mat.dat[mat.dat$Attempt >= 1,]
+
+# now creat data frame 
+# n cases
+nsub <-length(levels(mat.dat$subject))
+print(paste0("subjects: ", nsub))
+# create data frame
+offline.measures <- data.frame(matrix(ncol = 2, nrow = nsub))
+  colnames(offline.measures) <- c("subject", "matrix.reasoning")
+# populate
+myrow <- 0 # start row counter
+for (i in 1:nsub) { # loop through subjects
+  subname <- levels(mat.dat$subject)[i] # find subject subject
+  myrows <- which(mat.dat$subject==subname) # select rows for this subject
+  tmp <- data.frame(mat.dat[myrows,])
+  tmp <- tmp %>% drop_na("Correct")
+  myrow <- i
+  offline.measures$subject[myrow] <- subname
+  offline.measures$matrix.reasoning[myrow] <- mean(tmp$Correct, na.rm= TRUE)
+}
+```
+
+### Vocabulary
+
+Here we probably just want an average of participants correct answers.
+
+```{r vocab}
+# first thing to do is to select relevant cases
+voc.dat <- session1.dat[session1.dat$`Task Name`== "Vocabulary",]
+# now make sure we only have repsonses
+voc.dat <- voc.dat[voc.dat$`Zone Type`== "response_button_image",]
+# now only attempts
+voc.dat <- voc.dat[voc.dat$Attempt >= 1,]
+
+# now creat data frame 
+# create data frame
+vocab.agg <- data.frame(matrix(ncol = 2, nrow = nsub))
+  colnames(vocab.agg) <- c("subject", "vocabulary")
+# populate
+myrow <- 0 # start row counter
+for (i in 1:nsub) { # loop through subjects
+  subname <- levels(voc.dat$subject)[i] # find subject subject
+  myrows <- which(voc.dat$subject==subname) # select rows for this subject
+  tmp <- data.frame(voc.dat[myrows,])
+  tmp <- tmp %>% drop_na("Correct")
+  myrow <- i
+  vocab.agg$subject[myrow] <- subname
+  vocab.agg$vocabulary[myrow] <- mean(tmp$Correct, na.rm= TRUE)
+}
+# merge data
+offline.measures <- merge(offline.measures, vocab.agg, by= "subject")
+```
+
+## Grammaticality judgement
+
+Here we probably just want an average of participants correct answers.
+
+```{r gram}
+# first thing to do is to select relevant cases
+gram.dat <- session1.dat[session1.dat$`Task Name`== "Grammaticality Decision Test",]
+# now make sure we only have repsonses
+gram.dat <- gram.dat[gram.dat$`Zone Type`== "response_button_image",]
+# now only attempts
+gram.dat <- gram.dat[gram.dat$Attempt >= 1,]
+
+# now creat data frame 
+# n cases
+nsub <-length(levels(gram.dat$subject))
+print(paste0("subjects: ", nsub))
+# create data frame
+gram.agg <- data.frame(matrix(ncol = 2, nrow = nsub))
+  colnames(gram.agg) <- c("subject", "grammar")
+# populate
+myrow <- 0 # start row counter
+for (i in 1:nsub) { # loop through subjects
+  subname <- levels(gram.dat$subject)[i] # find subject subject
+  myrows <- which(gram.dat$subject==subname) # select rows for this subject
+  tmp <- data.frame(gram.dat[myrows,])
+  tmp <- tmp %>% drop_na("Correct")
+  myrow <- i
+  gram.agg$subject[myrow] <- subname
+  gram.agg$grammar[myrow] <- mean(tmp$Correct, na.rm= TRUE)
+}
+# merge data
+offline.measures <- merge(offline.measures, gram.agg, by= "subject")
+```
+
+# Serial memory task
+
+This task largely resembles that use by Bishop and Hsu. Here word span is defined as the highest level of difficulty. So if you answered an item with 8 words, you'd have a word span of 8.
+
+```{r mem}
+# first thing to do is to select relevant cases
+mem.dat <- session1.dat[session1.dat$`Task Name`== "Serial memory",]
+# now make sure we only have repsonses
+mem.dat <- mem.dat[mem.dat$`Zone Type`== "response_button_image",]
+# now only attempts
+mem.dat <- mem.dat[mem.dat$Attempt >= 1,]
+# now add level
+mem.dat$word.span <- as.numeric(str_remove_all(mem.dat$`Spreadsheet Name`, "[Level]"))
+
+# now creat data frame 
+# n cases
+nsub <-length(levels(mem.dat$subject))
+print(paste0("subjects: ", nsub))
+# create data frame
+mem.agg <- data.frame(matrix(ncol = 2, nrow = nsub))
+  colnames(mem.agg) <- c("subject", "word.span")
+# populate
+myrow <- 0 # start row counter
+for (i in 1:nsub) { # loop through subjects
+  subname <- levels(mem.dat$subject)[i] # find subject subject
+  myrows <- which(mem.dat$subject==subname) # select rows for this subject
+  tmp <- data.frame(mem.dat[myrows,])
+  tmp <- tmp %>% drop_na("Correct")
+  # only correct responses
+  tmp <- tmp[tmp$Correct == 1,]
+  # now look up max response
+  myrow <- i
+  mem.agg$subject[myrow] <- subname
+  mem.agg$word.span[myrow] <- max(tmp$word.span, na.rm= TRUE) + 1
+}
+# merge data
+offline.measures <- merge(offline.measures, mem.agg, by= "subject")
+```
+
+Note here that the word span itself is very low. I did  have some feedback here about how participants would get the first one wrong while adjusting to the game. Because of this, they would be thrown out immediately with a span of two. I think we can fix this easily in the next version.
+
+## Pre-test prepositions
+
+```{r pre}
+# first thing to do is to select relevant cases
+pre.dat <- session1.dat[session1.dat$`Task Name`== "Pre-Post Test",]
+# now make sure we only have repsonses
+pre.dat <- pre.dat[pre.dat$`Zone Type`== "response_button_image",]
+# now only attempts
+pre.dat <- pre.dat[pre.dat$Attempt >= 1,]
+# remove practice
+pre.dat <- pre.dat[pre.dat$display == "recall",]
+
+# now creat data frame 
+# n cases
+nsub <-length(levels(pre.dat$subject))
+print(paste0("subjects: ", nsub))
+# create data frame
+pre.agg <- data.frame(matrix(ncol = 2, nrow = nsub))
+  colnames(pre.agg) <- c("subject", "pre.test")
+# populate
+myrow <- 0 # start row counter
+for (i in 1:nsub) { # loop through subjects
+  subname <- levels(pre.dat$subject)[i] # find subject subject
+  myrows <- which(pre.dat$subject==subname) # select rows for this subject
+  tmp <- data.frame(pre.dat[myrows,])
+  tmp <- tmp %>% drop_na("Correct")
+  myrow <- i
+  pre.agg$subject[myrow] <- subname
+  pre.agg$pre.test[myrow] <- mean(tmp$Correct, na.rm= TRUE)
+}
+# merge data
+offline.measures <- merge(offline.measures, pre.agg, by= "subject")
+```
+
+# game data 
+
+```{r train}
+# first simply data frame
+training <- session2.dat %>% dplyr::select("subject", "Task Name", "Type",	"Time Elapsed",	"Time Taken", "Correct",	"Attempts",	"Mistakes", "Clue1", "SpreadsheetName")
+# limit to actual game data
+training <- training[training$`Task Name` == "BOLD replication study",]
+training <- training[training$Type == "PUZZLE COMPLETE",]
+# now code variables
+training$item <- training$Clue1
+# now code correct accruately
+training$Correct[is.na(training$Correct)] <- 0
+training$accuracy <- as.factor(training$Correct)
+
+# now read info for look up
+lookupT <- read_csv("level_info.csv")
+# combine
+training <- merge(training, lookupT, by.x= "Clue1", by.y = "item")
+training$Session <- as.factor(training$Session)
+```
+
+## Post-test prepositions
+
+```{r post}
+# first thing to do is to select relevant cases
+post.dat <- session2.dat[session2.dat$`Task Name`== "Pre-Post Test",]
+# now make sure we only have repsonses
+post.dat <- post.dat[post.dat$`Zone Type`== "response_button_image",]
+# now only attempts
+post.dat <- post.dat[post.dat$Attempt >= 1,]
+# remove practice
+post.dat <- post.dat[post.dat$display == "recall",]
+
+# now creat data frame 
+# n cases
+nsub <-length(levels(post.dat$subject))
+print(paste0("subjects: ", nsub))
+# create data frame
+post.agg <- data.frame(matrix(ncol = 2, nrow = nsub))
+  colnames(post.agg) <- c("subject", "post.test")
+# populate
+myrow <- 0 # start row counter
+for (i in 1:nsub) { # loop through subjects
+  subname <- levels(post.dat$subject)[i] # find subject subject
+  myrows <- which(post.dat$subject==subname) # select rows for this subject
+  tmp <- data.frame(post.dat[myrows,])
+  tmp <- tmp %>% drop_na("Correct")
+  myrow <- i
+  post.agg$subject[myrow] <- subname
+  post.agg$post.test[myrow] <- mean(as.numeric(tmp$Correct), na.rm= TRUE)
+}
+# merge data
+offline.measures <- merge(offline.measures, post.agg, by= "subject")
+```
+
+# Ananlysis
+
+## GLMM analysis 
+
+In the old document it states: 
+
+Analysis will look at the effects of Group (DLD vs comparison), Session (1 to 4), and Item type (Repeated or Novel), to test for the presence of an interaction between Group and Item Type. We will run a linear mixed model using the lme4 package in the R programming language, with Group, Condition and Session as fixed effects, and child and item as random effects, using the formula: lmer(Correct ~ Group * Condition * Session + (1|Subject)+(1|Item)) In addition, we anticipate a main effect of Session that will show learning of the task across sessions; we do not have specific predictions about any interactions between Session and Group or Item type.
+
+Right now, the contrast scheme is kind of ambiguous. I think we need to narrow this down. We probably want to use main effects where possible (Group, Condition). 
+
+However, it's not clear how we plan to do this for session. We could treat it as continuous and allow us to interpret as a main effect. Alternatively, we could set the contrasts as main effects. However, with more than two level this makes interpretation difficult (we'd compare session 1, 2, and 3 each to the grand mean). An alterante would be to look at simple main effects with treatment coding and compare each session to day 1. OR compare successive days. 
+
+I think we really need to be clear what our preference for contrasts are. 
+
+```{r GLMM}
+# first plot the data
+# make numeric dv for plotting
+training$Correct <- as.numeric(training$Correct)
+training_plot_dat <- aggregate(FUN=mean, data=training, Correct~ Session + condition)
+#now prepared, plot: plot seems to be going in the opposite way to expetced. While check coidng another time.
+ggplot(data=training_plot_dat, aes(x=Session, y=Correct, fill=condition)) +
+geom_bar(stat="identity", position=position_dodge()) + ylim(0,1.1) + theme_classic()
+
+#function for centring data
+ctr <- function (x) scale(as.numeric(as.character(x)),scale=FALSE)
+# model 1: codes session as a numeric. Session is centred (grand mean is intercept)
+model1 = glmer(data = training, accuracy ~ ctr(Session) * condition +
+                  (1 | subject) + 
+                  (1 | item), 
+                  family = binomial(link = "logit"), 
+                  control=glmerControl(optCtrl=list(maxfun=200000)), contrasts=list(condition=contr.sum))
+summary(model1)
+# model 2: codes session a factor and uses treatment (day 1 is intercept). Compares condition between session 1 and other sessions.
+model2 = glmer(data = training, accuracy ~ Session * condition +
+                  (1 | subject) + 
+                  (1 | item), 
+                  family = binomial(link = "logit"), 
+                  control=glmerControl(optCtrl=list(maxfun=200000)), contrasts=list(condition=contr.sum))
+summary(model2)
+# model 3: use successive difference to compare main effect of condition between sessions (grand mean is intercept)
+contrasts(training$Session) <- contr.sdif
+model3 = glmer(data = training, accuracy ~ Session * condition +
+                  (1 | subject) + 
+                  (1 | item), 
+                  family = binomial(link = "logit"), 
+                  control=glmerControl(optCtrl=list(maxfun=200000)), contrasts=list(condition=contr.sdif))
+summary(model3)
+```
+
+As we can see, each provides different results so i think we need to be sure of this.
+
+## Pre and post
+
+Now that the data is prepared, we conducted prposed analyses. 
+
+```{r pre vs post}
+# make frame
+forPlot <- offline.measures %>% select("subject", "pre.test", "post.test")
+# long format for plot
+forPlot <- gather(forPlot, time, score, pre.test:post.test, factor_key=TRUE)
+# plot pre and post
+ggplot(forPlot, aes(x= time, y= score, color= time)) +
+  ggbeeswarm::geom_beeswarm() + theme_classic() + xlab("")
+# run t.test
+t.test(offline.measures$pre.test, offline.measures$post.test, paired= TRUE)
+```
+
+Odd that we saw a decrease, BUT this wasn't ramdomised for piloting so might be that one spreadsheet is easier than the other.
+
+# Feeback from parents 
+
+**Participants 1**
+
+She really enjoyed it. It was much easier getting her to complete that than her home schooling!
+
+The only feed back I have is that the American robotic voice was sometimes difficult to understand and had to be replayed a few times.  
+
+Also on the exercise to identify a correct and incorrect sentences she got a bit confused thinking she needed to say if it was true rather than correctly structured e.g. ‘the sky blue is’ Was seen a true, the sky is blue. I had to re-explain what she needed to focus on. Still she did really enjoy it. 
+
+Many thanks and good luck with the study!
+
+**Participant 2**
+
+Yes all worked well once we switched to chrome rather than safari as you suggested. He enjoyed it and has proudly put the certificate up! Hope the remainder of your data collection goes well.
+
+**Participant 3**
+
+Thank you very much.
+He did enjoy it but found the activities repetitive at times. Not sure if this was on purpose?
+Good luck with your research!
+Do you need any more volunteers?
+
+**Participant 4**
+\
+Thanks very much for this and this is exactly the kind of feedback we need. I’ve heard from a couple of people that session 1 is a bit long, so will be rolling it out as two smaller sessions during the next wave of piloting. 
+
+With regards to the mouse issue, which task was this in? 
+
+I’ll send the invite to the treasure hunt tomorrow am. 
+
+**AP**
+
+Based on this,perhaps, we want to split session 1 into two sessions?

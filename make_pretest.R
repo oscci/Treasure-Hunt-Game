@@ -15,7 +15,7 @@ require(magick)
 picdir <- "/Users/dorothybishop/deevybee_repo/magic images/colored PNG/"
 mydir <- "/Users/dorothybishop/deevybee_repo/magic images/assembled_pics/"
 
-myitems<-read.csv('picdir/multipic_items.csv')
+myitems<-read.csv(paste0(picdir,'multipic_items.csv'))
 
 NB! picture1 has been overwritten with blank
 
@@ -51,8 +51,8 @@ assemblepics <- function(itemname,top1,top2,bot1,bot2){
   image_write(imageall, path=itemname, format = "png")
 }
 
-
-for (i in 1:8){
+nitem=8
+for (i in 1:nitem){
   mynum1<-(3*(i-1)+1)
   Xword <- myitems$pic[mynum1]
   Yword <- myitems$pic[(mynum1+1)]
@@ -126,3 +126,26 @@ assemblepics(itemname,top1,top2,bot1,bot2)
 }
 
 write.csv(sentencedf,paste0(mydir,'SentenceList.csv'),row.names=T)
+
+#Make a spreadsheet for Gorilla
+gvars <- c('randomise_blocks','randomise_trials','display',	'answer','b1','b2','b3','b4',
+'Sentence',	'flag_trial','permutation')
+gdf <- data.frame(matrix(NA,nrow=(2+nitem*3),ncol=length(gvars)))
+colnames(gdf)<-gvars
+rowbits<-c('fixation','recall','break')
+gdf$display<-c('Introduction',rep(rowbits,nitem),'end')
+gdf$flag_trial[2:(nrow(gdf)-1)]<-rep(1:nitem,each=3)
+w<-which(gdf$display=='recall')
+gdf$permutation[w]<-1:nitem
+allsent<-  paste0(gsub(" ", "_", sentencedf$Sentence),'.mp3')
+gdf$Sentence[w]<-allsent
+gdf$b1[w] <- paste0("Item_",1:nitem,'A.png')
+gdf$b2[w] <- paste0("Item_",1:nitem,'B.png')
+gdf$b3[w] <- paste0("Item_",1:nitem,'C.png')
+gdf$b4[w] <- paste0("Item_",1:nitem,'D.png')
+gdf$answer[w]<- paste0("Item_",1:nitem,sentencedf$Correct,'.png')
+
+write.csv(gdf,paste0(mydir,'GorillaSheet.csv'),row.names=F)
+
+
+

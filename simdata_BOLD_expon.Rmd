@@ -1,0 +1,352 @@
+---
+title: "simul_gorilla_data"
+author: "DVM Bishop/P Thompson"
+date: "11/05/20"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+require(tidyverse)
+require(lme4)
+require(lmerTest)
+options(scipen = 999)
+```
+
+## Background
+
+Simulated data from the Treasure Hunt Game to establish power to detect interaction between Condition and Group using lmer.
+Step 1. Simulate a series of Items with a given probability of success that varies by (a) group and (b) item type. 
+Also include estimates of random intercepts for subject and item.
+
+This chunk just uses estimates of effects (in terms of how they affect probability of success) to do a sanity check.
+
+### Updated 29th July 2020
+Need to take into account the learning effect. Originally just had a session effect where base score increases across blocks. However, effect of repeated items should gradually increase with exposure to them. 
+So need to have a small increment for each exposure to a repeated item.
+This woud be IN ADDITION to an overall improvement which could be attributed to getting better at processing this sentence type.
+
+
+```{r makedata}
+#THIS CHUNK IS NOW OBSOLETE. I USED IT TO PLAY WITH GENERATING DATA USING THE ORIGINAL METHOD. JUST RETAINED HERE FOR HISTORICAL INTEREST. IT USED LOOPS TO GENERATE DATA - LATER CHUNK HAS MOST OF THIS VECTORISED FOR SPEED.
+initialcheck<-0 #change to 1 to run this chunk. Otherwise it will skip
+#This chunk generates simulated data with multiple nested loops and is just kept for historical interest
+# The same effect is obtained in later chunk with vectorised formula
+if (initialcheck==1){
+  nItem<-20 #Items per session and condition
+  nsub <- 25 #subjects per group, 2 groups
+  ncond <- 2 # 2 conditions (repeated and non)
+  nsess <- 4 # 4 sessions
+  ngroup <- 2
+  simdat_orig <- data.frame(matrix(NA, nrow=nItem*nsub*ncond*nsess*ngroup,ncol=6))
+  colnames(simdat_orig) <- c('Subject','Group','Session','Item','Condition','Correct')
+  
+  #This time we increment the probability of correct for each item of each type.
+  #Rate of increase can vary by item type and group
+  basep <- .7 #starting probability correct
+  myNcond1 <- .002
+  Ncond_p1 <- seq(basep,by=myNcond1,length.out=nItem*nsess)
+  Ncond_p2 <- Ncond_p1 #both groups improve same on N items
+  myRcond1 <- .003
+  myRcond2 <- .002
+  Rcond_p1 <- seq(basep,by=myRcond1,length.out=nItem*nsess)
+  Rcond_p2 <-  seq(basep,by=myRcond2,length.out=nItem*nsess)
+  #item by item probability correct by item type N or R, and by group (1 or 2)
+  allcondp <- data.frame(cbind(Ncond_p1,Ncond_p2,Rcond_p1,Rcond_p2))
+  
+  # The following terms for group and condition just refer to the coding of these effects in analysis, and NOT to effect sizes
+  groupcode <- c(-1,1)
+  condcode <-c(-1,1)
+  # These are random effects estimates
+  itemeff <- (runif(nItem)-.5)/10 #item-specific effect
+  subeff <- (runif(nsub)-.5)/10 #subject specific effect - these are both small probabilities +ve or -ve
+  thisrow<-0
+  for (sess in 1:nsess){
+    for (group in 1:ngroup){
+      for (sub in 1:nsub){
+        for (cond in 1:ncond){
+          for(Item in 1:nItem){
+            thisrow <- thisrow+1
+            simdat_orig$Subject[thisrow]<-sub+1000*group #use large offset for subject code to ensure no overlap in subject IDs for groups 1 and 2. 
+            #Group 1 will be numbered 1,2,3, etc and Group 2 1001,1002,1003 etc
+            simdat_orig$Group[thisrow]<-groupcode[group]
+            simdat_orig$Item[thisrow]<-Item
+            simdat_orig$Session[thisrow]<-sess
+            simdat_orig$Condition[thisrow]<-condcode[cond]
+            
+            criticalp <-allcondp[(Item+(sess-1)*nItem),(2*(cond-1)+group)]+subeff[sub]+itemeff[Item]
+            
+            response <- ifelse(runif(1)<criticalp,1,0)
+            simdat_orig$Correct[thisrow]<-response
+          }
+        }
+      }
+    }
+  }
+  #Simdat2 was used in course of checking simulated data: it crunches data to give proportions correct for each Session/Group/subject/condition
+  #It is not used further in analysis
+  simdat2 <- aggregate(simdat_orig$Correct, by=list(simdat_orig$Session,simdat_orig$Group,simdat_orig$Subject,simdat_orig$Condition),FUN=mean)
+  colnames(simdat2)<-c('Session','Group','Subject','Condition','Correct')
+  myag<-aggregate(Correct~Session*Group*Condition,data=simdat2,FUN=mean)
+  ggplot(data=myag[myag$Group==1,], aes(x=Session, y=Correct, group=Condition)) +
+    geom_line(aes(linetype=as.factor(Condition)))+
+    geom_point()+
+    ggtitle('TD')
+  ggplot(data=myag[myag$Group==-1,], aes(x=Session, y=Correct, group=Condition)) +
+    geom_line(aes(linetype=as.factor(Condition)))+
+    geom_point()+
+    ggtitle('DLD')
+}
+```
+
+
+
+# Run statistics on the model
+
+
+Following advice from here 
+https://stats.stackexchange.com/questions/58745/using-lmer-for-repeated-measures-linear-mixed-effect-model
+
+```{r runmodel}
+#THIS TOO IS NOW OBSOLETE.
+if (initialcheck==1){
+  
+  
+  m5B <- glmer(Correct ~ Group*Condition*Session + (1|Subject) + (1|Item), data = simdat_orig, family = binomial, control = glmerControl(optimizer = "bobyqa"))
+  
+}
+
+```
+
+## Alternative way of modeling probability correct
+The percentage items correct may be modelled as gradually increasing item by item, reaching an asymptote just below 100%  
+
+Chance is 50% correct (at least for simple above/below) and we expect children to be a bit above that level to start with.   
+
+So if we define a function that gradually increases from 50% to 95% , we can simulate different groups/conditions, by just stretching it to various degrees, so that the end point is below 95%.  
+
+The next chunk demonstrates how this is done; 2 groups are shown, one that goes from 65% to 92% correct in 80 trials, and one that goes from 65% to 80% in the same time.
+
+
+```{r asymptotic.p}
+nItem=20
+nsess=4
+startseq<-seq(0,.7,length.out=nItem*nsess) #range selected to give plausible range
+de <-1.5-dexp(startseq) #this goes from 60% correct at start to 95% by final item
+plot(startseq,de,type='l', main='base function')
+
+#let's set a baseline starting level for everyone of 65%
+basep=.65
+basex <-startseq[max(which(de<basep))] #this is value of startseq corresponding to basep
+#then let's take 2 conditions, with different final values
+finGroup1 <- .92
+finGroup2 <-.80
+pGroup1 <- startseq[max(which(de<finGroup1))]
+pGroup2 <- startseq[max(which(de<finGroup2))]
+
+valueGroup1 <- 1.5-dexp(seq(basex,pGroup1,length.out=80))
+valueGroup2 <- 1.5-dexp(seq(basex,pGroup2,length.out=80))
+
+
+plot(1:80,valueGroup1,type='l',xlab='trial',ylab='p.correct',main='Simulated growth in accuracy')
+lines(1:80,valueGroup2,type='l')
+
+
+```
+
+
+
+```{r plotsimsfunction}
+#Check scores are as intended
+plotsims<-function(simdat,nItem,nsub){
+  myag <- aggregate(simdat$Correct, by=list(simdat$Session,simdat$Group,simdat$Condition),
+                    FUN=mean)
+  myagsd <- aggregate(simdat$Correct, by=list(simdat$Session,simdat$Group,simdat$Condition),
+                      FUN=sd)
+  myag<-cbind(myag,myagsd[,4]/sqrt(nsub))
+  colnames(myag)<-c('Session','Group','Condition','p.Corr','se')
+  
+  
+  group1<-filter(myag,Group==-1,Condition==1)
+  group2<-filter(myag,Group==1,Condition==1)
+  
+  plot(group1$Session,group1$p.Corr,type='b',ylim=c(.5,1),xaxt="n",xlab='Session',ylab='percent correct',main=paste0('Nsubs = ',nsub,' : Nitems = ',nItem))
+  axis(side=1, at=1:4, line=1)
+  lines(group2$Session,group2$p.Corr,type='b',col='red')
+  
+  group1a<-filter(myag,Group==-1,Condition==-1)
+  group2a<-filter(myag,Group==1,Condition==-1)
+  lines(group1a$Session,group1a$p.Corr,type='b',lty=2,col='black')
+  lines(group2a$Session,group2a$p.Corr,type='b',lty=2,col='red')
+  
+  # Add a legend
+  legend('bottomright', legend=c("TD_novel","DLD_novel","TD_repeated", "DLD_repeated"),
+         col=c("black", "red","black", "red"), lty=c(1,1,2,2), cex=0.8)
+  
+  
+  myagg2<-aggregate(myag$p.Corr, by=list(myag$Group,myag$Condition),FUN=mean)
+  colnames(myagg2)<-c('Group','Condition')
+  myaggsd<-aggregate(myag$p.Corr, by=list(myag$Group,myag$Condition),FUN=sd)
+  myagg2<-cbind(myagg2,myaggsd[,3])
+  colnames(myagg2)[3:4]<-c('Mean_p.corr','SD')
+  return(myagg2) #little table allows one to look at results from one sim
+}
+```
+
+The next chunk simulates a new dataset for each iteration of power analysis.
+Note that it uses basep, which is a little dataframe that has probabilities of success for different groups x conditions. These are generated using the asymptotic function used in demonstration above. 
+
+```{r power_sim}
+data_sims <- function(nItem, nsub, ncond, nsess, ngroup,basep,allcondp,randsubs,randitems)
+{
+  #Now Vectorised!
+  # nItem = Items per session per condition
+  # nsub = subjects per group
+  # ncond  = 2 conditions (repeated and non)
+  # nsess  = 4 sessions
+  # ngroup = 2 groups
+  # randsubs = term that sets range for random subjects effect
+  # randitems = term that sets range for rand items effect
+  
+  
+  #We increment the probability of correct for each item of each type.
+  #Rate of increase can vary by item type and group
+  
+  
+  groupcode <- c(-1,1) #group-1 is DLD ; group1 is TD
+  condcode <-c(-1,1) #cond-1 is novel ; cond1 is repeated
+  simdat<-expand.grid(1:nsub,groupcode,1:nsess,1:nItem,condcode)
+  colnames(simdat) <- c('Subject','Group','Session','Item','Condition')
+  w<-which(simdat$Group==1)
+  simdat$Subject[w] <- simdat$Subject[w]+nsub #codes must be different for subs in 2 groups, so add offset
+  
+  simdat$allorder<-simdat$Item + (simdat$Session-1)*nItem #order rather than item ID determines avg learning
+  w<-which(simdat$Condition==1)
+  simdat$Item[w] <- simdat$Item[w]+nItem #codes must be different for items in 2 conditions, so add offset - this is item identity, for random effects. We *could* make this more constant for the Repeated items, but because they do vary in distractors etc, better to make distinct for each one
+  simdat$interaction <- 1 #we need to set numeric codes for each combination in interaction in order to use vectorised formula. For 2 x 2, codes are 1,2,3,4
+  w<-which(simdat$Condition==1)
+  simdat$interaction[w]<-2 #initialise with 1-2
+  w<-which(simdat$Group==1)
+  simdat$interaction[w]<-simdat$interaction[w]+2 #add 2 for group2, so get values 3-4
+  simdat$Correct <- 1 #default response is correct
+  myrands <- runif(nrow(simdat))
+  subeff<-runif((nsub*2),-randsubs,randsubs) #one effect per subject - range specified by randsubs
+  itemeff<-runif(nItem*2,-randitems,randitems) #one effect per item - range specified by randitems
+  simdat$allcondrow<-simdat$allorder+(simdat$Session-1)*nItem
+  for(j in 1:nrow(simdat)){ #can't work out how to vectorise this!
+    simdat$criticalp[j]<-allcondp[simdat$allorder[j],simdat$interaction[j]]
+  }
+  simdat$criticalp <- simdat$criticalp+subeff[simdat$Subject]+itemeff[simdat$Item]
+  simdat$Correct[simdat$criticalp<myrands]<-0
+  return(simdat)
+}
+```
+
+The chunk below computes power. It is fairly slow to run.
+I need to check with a larger number of simulations, but will first wait to see if Paul agrees with the model.
+I think we need power to detect a group x condition interaction.
+This analysis suggests we have 90%+ power with 30 participants per group and 20 items per condition per session.
+
+
+```{r dopower}
+niter <- 200
+Nitemseq<-seq(16,20,24,4) #specify here the range of values for Nitems (start, end, step)
+nsubseq <-seq(25,30,5) #specify here the range of values for nsub
+randsubs <- .1
+randitems <-.075
+
+#Make table which gives probability correct for each item in each condition/group.
+
+basep <- .65 #starting avg probability correct for all items/subjects
+#group 1 is DLD, group 2= TD
+#myN is novel, myR is repeated
+finNgroup1 <- .79 #item increment p correct for each item in N condition/group1
+finNgroup2 <- .84 #item increment p correct for each item in N condition/group2
+finRgroup1 <- .91 #item increment p correct for each item in R condition/group1
+finRgroup2 <- .86 #item increment p correct for each item in R condition/group2
+#We use these values to create probability correct matrix
+#Updated version, use an exponential function for learning.
+#See earlier chunk for the logic
+startseq<-seq(0,.7,length.out=nItem*nsess) #range selected to give plausible range
+de <-1.5-dexp(startseq) #this goes from 60% correct at start to 95% by final item
+basex <-startseq[max(which(de<basep))] #this is value of startseq corresponding to basep
+baseDN <- startseq[max(which(de<finNgroup1))]
+baseTN <- startseq[max(which(de<finNgroup2))]
+baseDR <- startseq[max(which(de<finRgroup1))]
+baseTR <- startseq[max(which(de<finRgroup2))]
+Ncond_p1 <- 1.5-dexp(seq(basex,baseDN,length.out=nItem*nsess))
+Ncond_p2 <- 1.5-dexp(seq(basex,baseTN,length.out=nItem*nsess))
+Rcond_p1 <- 1.5-dexp(seq(basex,baseDR,length.out=nItem*nsess))
+Rcond_p2 <- 1.5-dexp(seq(basex,baseTR,length.out=nItem*nsess))
+#item by item probability correct by item type N or R, and by group (1 or 2)
+allcondp <- data.frame(cbind(Ncond_p1,Ncond_p2,Rcond_p1,Rcond_p2))
+
+#We plot the probabilities to check they make sense
+plot(1:(nItem*nsess),allcondp$Rcond_p1,type='l')
+lines(1:(nItem*nsess),allcondp$Ncond_p1,,lty=2)
+lines(1:(nItem*nsess),allcondp$Rcond_p2,col='red')
+lines(1:(nItem*nsess),allcondp$Ncond_p2,lty=2,col='red')
+abline(v=nItem)
+abline(v=nItem*2)
+abline(v=nItem*3)
+
+#Make a data frame to hold the results of power analysis
+powerdf<-expand.grid(Nitemseq,nsubseq) #powerdf to hold results
+colnames(powerdf) <- c('nItem','nsub')
+powerdf$niter<-niter
+powerdf$basep<-basep
+powerdf$randsubs<-randsubs
+powerdf$randitems<-randitems
+powerdf$myNgroup1<-finNgroup1
+powerdf$myNgroup2<-finNgroup2
+powerdf$myRgroup1<-finRgroup1
+powerdf$myRgroup2<-finRgroup2
+#add columns to show power
+powerdf$pow.Intercept<-NA
+powerdf$pow.group<-NA
+powerdf$pow.cond<-NA
+powerdf$pow.sess<-NA
+powerdf$pow.group_cond<-NA
+powerdf$pow.group_sess<-NA
+powerdf$pow.cond_sess<-NA
+powerdf$pow.3way_int<-NA
+
+#also need temporary data frame to hold results of analysis for each iteration
+myresults<-data.frame(matrix(NA,nrow=niter,ncol=8))
+myout <- myresults
+
+#Start looping through iterations here
+thisrow<-0
+for (nItem in Nitemseq){
+  print(paste('Nitem = ',nItem))
+  for (nsub in nsubseq){
+    print(paste('Nsub = ',nsub))
+    thisrow<-thisrow+1
+    for(i in 1:niter){
+      if(i/20==round(i/20,0)){ #show progress
+        print(paste0('iteration ',i))
+      }
+      simdat <- data_sims(nItem, nsub, ncond = 2, nsess = 4, ngroup = 2,   basep,allcondp,randsubs,randitems)
+      #NB randsubs and randitems are +/- percentage variation range for these
+      #NB formula can give critical p > 1, depending on settings
+      simdat$Session.c<-simdat$Session-mean(simdat$Session) #centre session
+      if (i==1){ #plot just the first simulated set to check effects
+        myagg2<-plotsims(simdat,nItem,nsub) #function does plot and also saves means for interaction in myagg2, so can be inspected
+      }
+      
+      #run regression
+      mymod <- glmer(Correct ~ Group*Condition*Session.c + (1|Subject)+(1|Item), data = simdat, family = binomial, control = glmerControl(optimizer = "bobyqa"))
+      
+      myres <- summary(mymod)
+      myresults[i,1:8]<-myres$coefficients[,4] #4th col row has p values
+    }
+    myout <- ifelse(myresults>0.05,0,1)
+    power = colMeans(myout)
+    #Add power values to the data frame
+    powerdf[thisrow,11:18]<-power
+  }
+}
+print(paste0('power = ',power))
+powerfile<-paste0('powerdf_session_N',niter,'_rands',randsubs,'randi',randitems,Sys.time(),'.csv')
+write.csv(powerdf,powerfile,row.names=F)
+```

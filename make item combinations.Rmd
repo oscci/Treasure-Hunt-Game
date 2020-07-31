@@ -484,6 +484,19 @@ for (mysession in 1:4){
              #Place an 'open' cell below, i.e. 4 slots along in other direction
               myspreadsheet[n,(placepos+4)]<-'open'
             }
+            
+            #Remove placed item from AnswerChoice and AnswerCell
+            if(myitem==1){
+              # bizarrely, for character cell cannot just do <- NA!!
+               myspreadsheet$Answer1Cell[n]<- is.na(myspreadsheet$Answer1Cell[n])
+              myspreadsheet$Answer1Choice[n]<-NA
+        
+            }
+                if(myitem==2){
+              myspreadsheet$Answer2Choice[n]<-NA
+              myspreadsheet$Answer2Cell[n]<- is.na(myspreadsheet$Answer2Cell[n])
+            }
+   
             #Now ensure placed item is not in choice array (pics 1-4)
             placedchoice <- which(myspreadsheet[n,choicestart:(choicestart+3)]==placeditem)
             if(length(placedchoice)>0){
@@ -494,35 +507,43 @@ for (mysession in 1:4){
         }
         
       }
-    }
-    
-  }
+  
 }
-codeconvert <- 0 #usually set to 1, but for testing script want to avoid changing values so set to 0
-if(codeconvert==1){
+
   #Convert numeric codes for grid cells to alphanumeric - hairy formula with modulus!
   mytempcol <- myspreadsheet$Answer1Cell
   myspreadsheet$Answer1Cell <- paste0(LETTERS[mytempcol%%10],(round(mytempcol/10,0)))
+    w<-which(mytempcol/10==round(mytempcol/10),0) #these are rows where tempcol ends in zero
+  myspreadsheet$Answer1Cell[w]<-NA
   
   mytempcol <- myspreadsheet$Answer2Cell
   myspreadsheet$Answer2Cell <- paste0(LETTERS[mytempcol%%10],(round(mytempcol/10,0)))
+      w<-which(mytempcol/10==round(mytempcol/10),0) #these are rows where tempcol ends in zero
+  myspreadsheet$Answer2Cell[w]<-NA
   
   if(mylevel>2){
     mytempcol <- myspreadsheet$Answer3Cell
     myspreadsheet$Answer3Cell <- paste0(LETTERS[mytempcol%%10],(round(mytempcol/10,0)))
+        w<-which(mytempcol/10==round(mytempcol/10),0) #these are rows where tempcol ends in zero
+  myspreadsheet$Answer3Cell[w]<-NA
   }
-} 
+ 
+  #Where the answercell corresponds to a fixed item, code ends in zero. Need to just delete these.
+
 spreadname<-paste0('./sheets/SheetSession', mysession, 'Level', '_', mylevel,'.csv') # changed to work with gorilla mechanic
-writetable <- 1 #make writing sheets optional, in case just testing script
-if(writetable==1){
+
+w<-which(colnames(myspreadsheet)=='Choice5')
+myspreadsheet<-myspreadsheet[,-w]
   #With write.table we can ensure that NAs are saved as blanks
   write.table(myspreadsheet,spreadname,   na = "",
               row.names = FALSE,
               col.names = TRUE,
               sep = ",")
-}
 
 
+  } #next level
+
+} #next session
 
 ```
 
@@ -559,7 +580,12 @@ Now that we have the stimulus, we need to create stimuli. This is done via googl
 
 Dorothy, I had originally pushed the .json to github but Google then google emailed to say that this might comprmise our credentials. So I've taken it down. I'll send over if you need it.
 
+I was not able to install googleLanguageR via normal interface, but I did manage it via
+remotes::install_github("ropensci/googleLanguageR") - however, this seemed unhappy with versoin of R that I have
+
 ```{r soundGenerator}
+makesounds<-0 #just make this chunk optional as it crashes if you don't have json properly installed
+if (makesounds==1){
 library("googleLanguageR")
 # need json file in directory to start this
 gl_auth("OSCCI-b66bc33a936e.json")
@@ -582,4 +608,5 @@ for (i in 1:length(items$stim)) {
           output = (paste0("./mp3/",items$label[i],".mp3")))
 }
 write.csv(items$label,'./mp3/items_created.csv')
+}
 ```

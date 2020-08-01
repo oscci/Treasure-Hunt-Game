@@ -8,6 +8,13 @@ require(gtools) #for permutations
 ```
 Used to generate item combinations for 2020 version of Treasure Hunt.
 ------------------------------------------------------------------------
+#IMPORTANT UPDATE
+1st August 2020 : I have set.seed to make spreadsheets reproducible.
+If we want to generate alternative sheets, we will need to change this.
+------------------------------------------------------------------------
+1st August 2020
+There was error in converting numeric codes for grid positions to letter codes. This process has been simplified and is now fixed.
+
 Updated some parameters; 27/7/20
 
 Also corrected to ensure fixed item is not in array; and repeated item is repeated across sessions
@@ -40,6 +47,19 @@ Sample sentences
 
 If we just create 4 (levels) x 4 (blocks) x 36 3-item combinations, we can then just use the 3rd item as a distractor for levels 1-2. This is 576 combinations.
 Currently our stimulus pool is 32 pictured target words
+
+ Grid positions denoted in RowColumn format, ie..
+ 11 12 13 14
+ 21 22 23 24
+ 31 32 33 34
+ 41 42 43 44
+ 
+Column then converted to letter
+ A1 B1 C1 D1
+ A2 B2 C2 D2
+ A3 B3 C3 D3
+ A4 B4 C4 D4
+ 
 ------------------------------------------------------------------------
 From earlier versions:
 Some questions that arise re item types.
@@ -408,8 +428,13 @@ posstart <- which(colnames(mytrio)=='Xpos') #columnsin my trios with pos codes
 #Make list of matrix positions that we can map onto cols A1, etc
 matrixpos <- c(11,12,13,14,21,22,23,24,31,32,33,34,41,42,43,44)
 alphanames <- c("A1", "B1", "C1", "D1", "A2", "B2", "C2", "D2", "A3", "B3", "C3", "D3", "A4", "B4", "C4", "D4")
+#Easiest if we just make array with 44 spaces and put codes in where needed
+myalphacodes <-vector()
+for(a in 1:length(matrixpos)){
+  myalphacodes[matrixpos[a]]<-alphanames[a]
+}
 
-#now populate spreadsheet
+#now populate spreadsheet: alternate repeated items (1-4) and novel.
 
 itemorder <- c(1,5,2,6,3,7,4,8,1,9,2,10,3,11,4,12,1,13,2,14,3,15,4,16,1,17,2,18,3,19,4,20,1,21,2,22,3,23,4,24)
 
@@ -417,8 +442,8 @@ maxm <-c(2,2,3,3,3) #this specifies how many elements to be considered when addi
 
 maxsession <- 4
 
-for (mysession in 1:4){
-  for (mylevel in 1:4){
+for (mysession in 1:1){
+  for (mylevel in 1:1){
     
     myspreadsheet <- data.frame(matrix(NA,ncol=length(spreadsheetcols),nrow=nitems))
     colnames(myspreadsheet) <- spreadsheetcols
@@ -459,9 +484,8 @@ for (mysession in 1:4){
       myitem <- 0 #initialise - no prepopulated cells
       if(mylevel!=2){
         myitem<-sample(1:2,1)#either X or Y item
-        
         mypiccols <-c((startcell-1),(startcell+1)) #cols for X and Y pictures
-      }
+          }
       if(mylevel>2){
         myitem<-myitem+1 #select Y or Z
         mypiccols <-c(mypiccols,startcell+3) #include col for Z item
@@ -473,7 +497,7 @@ for (mysession in 1:4){
         w<-which(matrixpos==myspreadsheet[n,starter]) #find matrix position
         if(length(w)>0){
           myspreadsheet[n,(w+gridstart-1)] <- 'open' #col corresponding to position for this item
-          if(myitem==m){ #item to place in grid
+          if(myitem==m){ #item to place in grid - 1st or 2nd in sentence
             placeditem<-myspreadsheet[n,mypiccols[myitem]] 
             placepos <- w+gridstart-1
             myspreadsheet[n,placepos]<-placeditem #place item in grid
@@ -491,45 +515,34 @@ for (mysession in 1:4){
                myspreadsheet$Answer1Cell[n]<- is.na(myspreadsheet$Answer1Cell[n])
               myspreadsheet$Answer1Choice[n]<-NA
         
-            }
+                      }
                 if(myitem==2){
               myspreadsheet$Answer2Choice[n]<-NA
               myspreadsheet$Answer2Cell[n]<- is.na(myspreadsheet$Answer2Cell[n])
-            }
+                          }
    
             #Now ensure placed item is not in choice array (pics 1-4)
             placedchoice <- which(myspreadsheet[n,choicestart:(choicestart+3)]==placeditem)
             if(length(placedchoice)>0){
               myspreadsheet[n,(choicestart+placedchoice-1)]<-myspreadsheet[n,(choicestart+4)]
               #we write Choice 5 over the Choice for the placed item, so choice array doesn't contain the placed item.     
-            }
+                      }
           }
         }
         
       }
   
-}
+} #next n
 
-  #Convert numeric codes for grid cells to alphanumeric - hairy formula with modulus!
-  mytempcol <- myspreadsheet$Answer1Cell
-  myspreadsheet$Answer1Cell <- paste0(LETTERS[mytempcol%%10],(round(mytempcol/10,0)))
-    w<-which(mytempcol/10==round(mytempcol/10),0) #these are rows where tempcol ends in zero
-  myspreadsheet$Answer1Cell[w]<-NA
-  
-  mytempcol <- myspreadsheet$Answer2Cell
-  myspreadsheet$Answer2Cell <- paste0(LETTERS[mytempcol%%10],(round(mytempcol/10,0)))
-      w<-which(mytempcol/10==round(mytempcol/10),0) #these are rows where tempcol ends in zero
-  myspreadsheet$Answer2Cell[w]<-NA
-  
-  if(mylevel>2){
-    mytempcol <- myspreadsheet$Answer3Cell
-    myspreadsheet$Answer3Cell <- paste0(LETTERS[mytempcol%%10],(round(mytempcol/10,0)))
-        w<-which(mytempcol/10==round(mytempcol/10),0) #these are rows where tempcol ends in zero
-  myspreadsheet$Answer3Cell[w]<-NA
-  }
+  #Convert numeric codes for grid cells to alphanumeric 
+  ans1cell <- which(colnames(myspreadsheet)=='Answer1Cell')
+  for (a in c(ans1cell,(ans1cell+2),(ans1cell+4))){
+    w<-which(myspreadsheet[,a]>0)
+    if(length(w)>0){
+    myspreadsheet[w,a]<-myalphacodes[myspreadsheet[w,a]]
+    }
+    } #next a (ie next cell column)
  
-  #Where the answercell corresponds to a fixed item, code ends in zero. Need to just delete these.
-
 spreadname<-paste0('./sheets/SheetSession', mysession, 'Level', '_', mylevel,'.csv') # changed to work with gorilla mechanic
 
 w<-which(colnames(myspreadsheet)=='Choice5')

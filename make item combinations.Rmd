@@ -442,8 +442,8 @@ maxm <-c(2,2,3,3,3) #this specifies how many elements to be considered when addi
 
 maxsession <- 4
 
-for (mysession in 1:1){
-  for (mylevel in 1:1){
+for (mysession in 1:4){
+  for (mylevel in 1:4){
     
     myspreadsheet <- data.frame(matrix(NA,ncol=length(spreadsheetcols),nrow=nitems))
     colnames(myspreadsheet) <- spreadsheetcols
@@ -541,6 +541,8 @@ for (mysession in 1:1){
     if(length(w)>0){
     myspreadsheet[w,a]<-myalphacodes[myspreadsheet[w,a]]
     }
+    w1<-which(myspreadsheet[,a]==0)
+     myspreadsheet[w1,a]<-NA
     } #next a (ie next cell column)
  
 spreadname<-paste0('./sheets/SheetSession', mysession, 'Level', '_', mylevel,'.csv') # changed to work with gorilla mechanic
@@ -580,7 +582,7 @@ for (mylevel in c(1,2,3,4)){
   
 }
 #With write.table we can ensure that NAs are saved as blanks
-write.table(testsheet,'testsheet.csv',   na = "",
+write.table(testsheet,'./sheets/testsheet.csv',   na = "",
             row.names = FALSE,
             col.names = FALSE,
             sep = ",")

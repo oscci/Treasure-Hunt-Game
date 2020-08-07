@@ -1,0 +1,587 @@
+---
+title: "Alex_tasks"
+output: html_notebook
+---
+
+This script provides details of the online tasks from Alex Wilson that we used for day 1. Alex's original script for analysing these is here:
+https://osf.io/4t6sx/  
+
+These data can be used for rough norms, though main purpose of these tasks is for group comparisons. After some basic descriptive information, I have played around using Bayesian methods to use the linear relationship between yeargroup and score to derive norm tables for 3 tests, with scaled scores mean mean 10 and SD 3 (range 1 to 20).  
+
+This dataset has been written up in a manuscript under review at Journal of Child Language:
+A. C. Wilson & D. V. M. Bishop  
+A new online assessment battery devised to tease apart pragmatics and core language skills in primary-school children  
+
+These details are taken from that paper.  
+  
+## Participants
+
+*We aimed to recruit at least 120 child participants aged between 7;0 and 11;11, by inviting all the year 3, 4, 5 and 6 children in three primary schools to take part. We used an opt-out approach to recruitment; we asked schools to circulate information to parents/carers two weeks before research sessions, and if parents/carers preferred their child not to be involved, they returned an opt-out form to school. We excluded from analysis the data from four children identifed by their teachers as having an autism diagnosis.*
+
+*To maintain anonymity of the children involved in our project, we did not collect personally-identifying information. Teachers were simply asked against each child’s research ID to indicate their year group (i.e. years 3-6), gender, whether they were diagnosed with autism, and whether they spoke English as an additional language.*  
+
+*Children speaking English as an additional language tended to perform as well on our tasks as native speakers; it was only on vocabulary that a small advantage emerged for native speakers, who had a mean of 27.89 compared to 26.35, t (75.74) = 2.45, p = 0.017. Due to the practicalities of working in busy schools over several testing sessions, and IT difficulties, there is some missing data; 29.8% of children did not complete at least one of the tests. There is considerable missing data for the youngest children; this was not a consequence of any particular challenges these children experienced with testing but instead due to IT difficulties that occurred as a matter of coincidence with two year 3 classes.* 
+
+
+NB we did not have information on age for these children - just year band.
+Also I have not screened out EAL children though I think we have the information to do that if we want, and should do so for the language measures I think.
+
+## Tasks
+### Picture-Word Matching Task (Vocabulary)
+*This includes 39 items in which participants choose which of four pictures is related to a word. Words are presented over audio and include nouns, verbs and adjectives. The words vary in approximate age of acquisition from 5 to 12, with similar numbers of easy and harder words; two experienced teachers independently rated the ages at which they would expect 50% and 90% of children in a typical class to be familiar with the word. There is one measured variable: the sum of items correctly answered (out of 39).* 
+
+### Children’s Grammaticality Decision Test  
+*Participants listen to sentences and decide if they are good or have mistakes/sound odd. There are 50 items: 4 sentences are entirely muddled and should be easily rejected, 20 items are borrowed from McDonald (2008) and showed high accuracy in primary school children, and 26 items are a subset of our adult version of this test (see https://osf.io/g4bvm); these latter items were chosen on the basis of high accuracy and high item-total correlations. Excluding the 4 muddled sentences, 23 items are grammatical and 23 are not. There is one measured variable: the sum of items currently answered (out of 50).*
+
+### Animal Matrices
+*This non-verbal reasoning task is an adapted version of the Animalogica multiple choice test (Stevenson, Heiser, & Resing, 2016). There are 18 items. Each item is a 2x2 matrix presented on the computer screen. In three of the boxes of each matrix, there are cartoon pictures of animals, and the fourth box is empty. The animals in the three boxes vary along six dimensions: species, colour, size, number, direction faced, and position in the box. There are systematic relationships between the three animals, and participants need to deduce which of five options fits in the empty box. For example, the top two boxes may show red lions, one big and one small, and the bottom left box may show a big yellow horse; the correct option to fill the empty box would be a small yellow horse. A paper-based version of the test had acceptable psychometric properties (Stevenson et al., 2016); in a sample of 111 5- and 6-year olds, the 18 items had Cronbach’s alpha of 0.75 and a correlation of 0.42 with a commercial IQ subtest. There is one measured variable: the sum of items correctly answered (out of 18).*
+
+
+
+Data can be downloaded direct from OSF. Here we are only interested in vocab, grammar, matrices but it is easiest to read in all data and then select what we need.
+
+```{r readdata}
+#====================================
+#Collect data from individual files 
+#and place in data-frame
+#====================================
+impdata<-read.csv("https://osf.io/7q2n8/download",stringsAsFactors = F)
+vocabdata<-read.csv("https://osf.io/2usqm/download",stringsAsFactors = F)
+grammardata<-read.csv("https://osf.io/a9nyq/download",stringsAsFactors = F)
+pragvioldata<-read.csv("https://osf.io/2afg8/download",stringsAsFactors = F)
+overturesdata<-read.csv("https://osf.io/4fzr8/download",stringsAsFactors = F)
+inferencingdata<-read.csv("https://osf.io/xp92n/download",stringsAsFactors = F)
+matricesdata<-read.csv("https://osf.io/k5ys4/download",stringsAsFactors = F)
+demographics<-read.csv("https://osf.io/g63fc/download",stringsAsFactors = F)
+
+alldata<-data.frame(matrix(ncol=13,nrow=length(demographics$ID),NA))
+alldata[,1]<-demographics$ID
+alldata[,10]<-demographics$year
+alldata[,11]<-demographics$male
+
+for(i in 1:length(demographics$ID)){
+  myID<-demographics$ID[i]
+  
+  if(myID %in% impdata$ID){
+    index<-which(myID %in% impdata$ID)
+    alldata[i,c(2,3)]<-c(impdata$implicature_total[which(impdata$ID==myID[index])],
+                         impdata$control_total[which(impdata$ID==myID[index])])
+  }
+  if(myID %in% vocabdata$ID){
+    index<-which(myID %in% vocabdata$ID)
+    alldata[i,4]<-vocabdata$total[which(vocabdata$ID==myID[index])]
+  }
+  if(myID %in% grammardata$ID){
+    index<-which(myID %in% grammardata$ID)
+    alldata[i,5]<-grammardata$total[which(grammardata$ID==myID[index])]
+  }
+  if(myID %in% pragvioldata$ID){
+    index<-which(myID %in% pragvioldata$ID)
+    alldata[i,6]<-pragvioldata$total[which(pragvioldata$ID==myID[index])]
+  }
+  if(myID %in% overturesdata$ID){
+    index<-which(myID %in% overturesdata$ID)
+    alldata[i,7]<-overturesdata$total[which(overturesdata$ID==myID[index])]
+  }
+  if(myID %in% inferencingdata$ID){
+    index<-which(myID %in% inferencingdata$ID)
+    alldata[i,8]<-inferencingdata$total[which(inferencingdata$ID==myID[index])]
+  }
+  if(myID %in% matricesdata$ID){
+    index<-which(myID %in% matricesdata$ID)
+    alldata[i,9]<-matricesdata$total[which(matricesdata$ID==myID[index])]
+  }
+}
+
+exclude<-c(299,262,256,286)
+alldata<-alldata[-exclude,]
+##Exclude children with these indices in the dataframe
+## It was dubious whether the children with these numbers
+## entered them correctly on the two testing occasions, so exclude.
+
+alldata<-alldata[-(which(rowSums(is.na(alldata[,c(2,4:7)]))>3)),] #exclude participants who completed 0 or 1 tasks 
+#(there are 10 empty rows and 5 rows for participants completing just one task)
+
+colnames(alldata)<-c("ID","imp","imp_control","vocab","grammar","pragviol",
+                     "overtures","inferencing","matrices","year","male")  
+```
+
+
+# Compute descriptive stats
+
+```{r missing}
+
+#produce table breaking sample down by age, sex, and N children with complete data
+n_year<-as.numeric(table(alldata$year))
+n_sex<-matrix(as.numeric(table(alldata$year,alldata$male)),ncol=2)
+n_sex<-cbind(n_sex,n_year-(n_sex[,1]+n_sex[,2]))
+alldata$missing<-rowSums(is.na(alldata[,2:8]))
+alldata$missing[which(alldata$missing>1)]<-1
+n_complete<-c(as.numeric(table(alldata$year,alldata$missing==0))[7:10],NA,NA)
+sample<-data.frame(n_year,n_sex,n_complete)
+```
+# Explore desc stats by year group
+
+```{r descs}
+allmeans<-data.frame(matrix(NA,nrow=6,ncol=10))
+colnames(allmeans)<-c('Year','VocN','VocMean','VocSD','GramN','GramMean','GramSD','MatN','MatMean','MatSD')
+allmeans$Year <-3:8
+allmeans[,2]<-aggregate(vocab~ year, alldata, length)[2]
+allmeans[,3]<-aggregate(vocab~ year, alldata, mean)[2]
+allmeans[,4]<-aggregate(vocab~ year, alldata, sd)[2]
+allmeans[,5]<-aggregate(grammar~ year, alldata, length)[2]
+allmeans[,6]<-aggregate(grammar~ year, alldata, mean)[2]
+allmeans[,7]<-aggregate(grammar~ year, alldata, sd)[2]
+allmeans[,8]<-aggregate(matrices~ year, alldata, length)[2]
+allmeans[,9]<-aggregate(matrices~ year, alldata, mean)[2]
+allmeans[,10]<-aggregate(matrices~ year, alldata, sd)[2]
+```
+
+We can create age-scaled scores from regression, but need first to plot.
+
+
+
+```{r doplots}
+
+plot(vocab~jitter(year,.5),data=alldata, main='Vocabulary')
+plot(grammar~jitter(year,.5),data=alldata,main='Grammar')
+plot(matrices~jitter(year,.5),data=alldata,main='Matrices')
+```
+
+Note from Dorothy: Since I have been learning from the McElreath book, I am going to try and use his Bayesian approach to linear regression. McElreath, R.(2020) Statistial Rethinking. 2nd edition.  
+
+NB Most of this is just for my own benefit - i.e. using this to practice what I've learned from the book. But by the end I do get to creating lookup tables for norms.
+
+```{r doMcE}
+require(rethinking)
+shortdat <- alldata[,c(1,4,5,9,10,11)]
+precis(shortdat)
+```
+This is direct copy of example code from ch 4 p 82, but modified for my data.  
+
+Start with vocab. This can range from 0 to 40, so we need to consider that when selecting priors. Also, it is a 4-choice test, so chance performance would be 10. We would not expect children to be as poor as at chance, so lowest expected would be around 12.
+
+$$v_i \sim Normal(\mu,\sigma)$$
+I think if I set mu to mean 25 and sd 5 that at constrains estimate of mean (+/- 2SD) to 15 to 35.
+Then need to estimate sigma, which is estimate of the sd in the population; so maybe estimate as uniform between 0 and 20.
+
+Can now plot priors.
+
+```{r priorplots}
+curve(dnorm(x,25,5),from =0,to=50,main='prior for mean')
+curve(dunif(x,0,20),from=-10, to = 40,main='prior for Sd')
+
+```
+But now we need to look at prior predictive simulation - what do priors imply about distribution of individual scores.
+```{r priorpred}
+sample_mu <- rnorm(1e4, 25,5)
+sample_sigma <-runif(1e4,0,20)
+prior_h <- rnorm(1e4,sample_mu,sample_sigma)
+dens(prior_h)
+
+```
+
+This makes me think the SD for prior should be smaller. Try making it 0-10.
+Yes this is better - fewer impossible values.
+
+```{r priorpred2}
+sample_mu <- rnorm(1e4, 25,5)
+sample_sigma <-runif(1e4,0,10)
+prior_h <- rnorm(1e4,sample_mu,sample_sigma)
+dens(prior_h)
+
+```
+
+Now redo using quap package.
+
+```{r quapvoc}
+w<-which(is.na(alldata$vocab))
+vocdat<-alldata[-w,]
+mvoc1 <- quap(
+  alist(
+    vocab ~ dnorm(mu,sigma),
+    mu ~ dnorm(25,5),
+    sigma ~ dunif(0,10)),
+  data=vocdat
+)
+precis(mvoc1)
+vcov(mvoc1)
+
+post <- extract.samples(mvoc1,n=1e4)
+```
+
+So far, just modeled vocab, without year.
+Linear model strategy: make parameter for mean of Gaussian into a linear function of the predictor 
+
+$$v_i \sim Normal(\mu,\sigma)$$
+$$\mu_i = \alpha + \beta(x_i-\bar{x})$$
+alpha prior 
+$$\alpha \sim Normal(25,5)$$
+
+beta prior 
+$$\beta \sim Log-Normal(0,10)$$
+
+sigma prior 
+$$\sigma \sim Uniform(0,10)$$ 
+
+Mu is no longer a parameter to be estimated: it is constructed from other parameters, alpha and beta. Deterministic , not stochastic.
+
+```{r plotpriors2}
+N = 200
+a <- rnorm(N,25,5)
+b<- rlnorm(N,0,10)
+plot(NULL,xlim=range(vocdat$year),ylim=c(0,50),xlab='year',ylab='vocab')
+xbar<-mean(vocdat$year)
+for (i in 1:N)
+  curve(a[i]+b[i]*(x-xbar),
+        from=min(vocdat$year),to=max(vocdat$year),add=T,
+        col=col.alpha("black",.2))
+
+
+```
+
+This is a bit weird - seem to either get ridiculous slopes, or totally flat.
+What we want is modest slopes.
+Retry with uniform rather than log for b- looks good if kept lowish
+
+```{r plotpriors3}
+N = 200
+a <- rnorm(N,25,5)
+b<- runif(N,0,6)
+plot(NULL,xlim=range(vocdat$year),ylim=c(0,50),xlab='year',ylab='vocab')
+xbar<-mean(vocdat$year)
+for (i in 1:N)
+  curve(a[i]+b[i]*(x-xbar),
+        from=min(vocdat$year),to=max(vocdat$year),add=T,
+        col=col.alpha("black",.2))
+```
+Let's now incorporate this into quap. Based on rcode 4.43 from McElreath
+
+```{r voc4.43}
+xbar <- mean(vocdat$year)
+m4.3 <- quap( 
+  alist(
+    vocab ~ dnorm( mu , sigma ) ,
+    mu <- a + b*( year - xbar ),
+    a ~ dnorm( 25 , 5 ) ,
+    b ~ dunif( 0 , 6 ) ,
+    sigma ~ dunif( 0 , 10 )
+  ) ,
+  data=vocdat )
+summary(m4.3)
+
+```
+
+Now we move to code 4.46; plot data and implied line.
+
+```{r code4.46}
+plot(vocab ~ year,data=vocdat,col=rangi2)
+post <- extract.samples(m4.3)
+a_map <- mean(post$a)
+b_map <- mean(post$b)
+curve (a_map+b_map*(x-xbar),add=T)
+
+```
+
+We'll now move on to prediction intervals.
+```{r code4.59}
+sim.voc<-sim(m4.3,data=list(year=3:8))
+#From the model simulates 1000 datapoints for each year band
+voc.PI <- apply(sim.voc,2,PI,prob=.89)
+
+
+```
+
+But what we actually want is to know the corresponding standard score for each raw score in relation to age.
+```{r makess}
+for (y in 1:6){
+  dens(sim.voc[,y],main=paste0('Year ',(y+2)))
+}
+
+
+```
+
+We'll convert to standard scores with mean 10 and SD 3.
+So can then use quantiles to put cutoffs
+
+```{r sscores}
+mychart <- data.frame(matrix(NA,nrow=19,ncol=7))
+colnames(mychart)<-c('Scaled','Y3','Y4','Y5','Y6','Y7','Y8')
+s <- 1:19 #corresponds to z scores from -3 to 3
+z <-(10-s)/3
+p = 1-pnorm(z) #quantiles that correspond to values of s
+mychart$Scaled <- s
+for (y in 3:8){
+  mycol<-y-1
+  mychart[,mycol] <- round(quantile(sim.voc[,(y-2)],p),0)
+  
+}
+```
+This is good, but better would be chart with lookup raw score in left column and scaled in body of chart. Can we do that?
+
+```{r sscores2}
+mychart <- data.frame(matrix(NA,nrow=40,ncol=7))
+colnames(mychart)<-c('Raw','Y3','Y4','Y5','Y6','Y7','Y8')
+maxscore <-40
+r <- 1:maxscore #corresponds to raw scores 
+mychart$Raw <- r
+s <- 1:19 #scaled scores
+z <-(10-s)/3 
+p = 1-pnorm(z)
+
+for (mycol in 1:6){
+  mybit<-sim.voc[,mycol]
+  mybit<-mybit[order(mybit)]
+  for (num in 1:maxscore){
+    w1<-which(mybit>(num-.001))
+    w2 <-which(mybit<(num+1.001))
+    if(length(w1)==0){w1 <- 1000}
+    if(length(w2)==0){w2 <- 1}
+    if(length(w1)==1000){w1 <- 1}
+    if(length(w2)==1000){w2 <- 1000}
+    #numbers in range w1 to w2 correspond to num
+    ww <- (min(w1)+max(w2))/2000
+    matchp <- min(which(p>ww))
+    if(matchp==Inf) {matchp<-20}
+    mychart[num,(mycol+1)]<-matchp
+  }
+}
+write.csv(mychart,'Vocab_norms.csv',row.names=F)
+```
+
+## Matrices
+
+Same approach but I will shorten the code just to include the most relevant.
+Matrices has only 18 items, so need to adapt the priors for this.
+Use norm of 10,3 for mean  and unif 0, 4 for SD
+
+(NB when I try with 0,3 for SD, the quap won't run)
+
+prior predictive simulation - what do priors imply about distribution of individual scores.
+```{r priorpredm}
+sample_mu <- rnorm(1e4, 9,3)
+sample_sigma <-runif(1e4,0,4)
+prior_h <- rnorm(1e4,sample_mu,sample_sigma)
+dens(prior_h)
+```
+
+```{r quapmat}
+#Version without year included
+w<-which(is.na(alldata$matrices))
+matdat<-alldata[-w,]
+mat1 <- quap(
+  alist(
+    matrices ~ dnorm(mu,sigma),
+    mu ~ dnorm(9,3),
+    sigma ~ dunif(0,4)),
+  data=matdat
+)
+```
+
+```{r matreg}
+xbar <- mean(matdat$year)
+mat2 <- quap( 
+  alist(
+    matrices~ dnorm( mu , sigma ) ,
+    mu <- a + b*( year - xbar ),
+    a ~ dnorm( 9 , 3 ) ,
+    b ~ dunif( 0 , 4 ) ,
+    sigma ~ dunif( 0 , 4 )
+  ) ,
+  data=matdat )
+summary(mat2)
+
+```
+
+We'll now move on to prediction intervals.
+```{r code4.59}
+sim.mat<-sim(mat2,data=list(year=3:8))
+#From the model simulates 1000 datapoints for each year band
+mat.PI <- apply(sim.mat,2,PI,prob=.89)
+
+
+```
+
+```{r regpriorsmat}
+#Now with priors for regression
+N = 200
+a <- rnorm(N,9,3)
+b<- runif(N,0,4)
+plot(NULL,xlim=range(matdat$year),ylim=c(0,30),xlab='year',ylab='matrices')
+xbar<-mean(matdat$year)
+for (i in 1:N)
+  curve(a[i]+b[i]*(x-xbar),
+        from=min(matdat$year),to=max(matdat$year),add=T,
+        col=col.alpha("black",.2))
+```
+
+```{r simmat.ss}
+sim.mat<-sim(mat2,data=list(year=3:8))
+maxscore <-18
+mychart <- data.frame(matrix(NA,nrow=maxscore,ncol=7))
+colnames(mychart)<-c('Raw','Y3','Y4','Y5','Y6','Y7','Y8')
+
+r <- 1:maxscore #corresponds to raw scores 
+mychart$Raw <- r
+s <- 1:19 #scaled scores
+z <-(10-s)/3 
+p = 1-pnorm(z)
+
+for (mycol in 1:6){
+  mybit<-sim.mat[,mycol]
+  mybit<-mybit[order(mybit)]
+  for (num in 1:maxscore){
+    w1<-which(mybit>(num-.001))
+    w2 <-which(mybit<(num+1.001))
+    if(length(w1)==0){w1 <- 1000}
+    if(length(w2)==0){w2 <- 1}
+    if(length(w1)==1000){w1 <- 1}
+    if(length(w2)==1000){w2 <- 1000}
+    #numbers in range w1 to w2 correspond to num
+    ww <- (min(w1)+max(w2))/2000
+    matchp <- min(which(p>ww))
+    if(matchp==Inf) {matchp<-20}
+    mychart[num,(mycol+1)]<-matchp
+  }
+}
+write.csv(mychart,'Matrices_norms.csv',row.names=F)
+```
+
+
+## Grammar
+
+Left this till last because it looks less normal - not sure if this is going to work!
+50 2-choice items. 
+Range does decrease at older year groups - approaching ceiling effects.
+Parameters in chunk below seem OK 
+```{r priorpredg}
+sample_mu <- rnorm(1e4, 40,3)
+sample_sigma <-runif(1e4,0,4)
+prior_h <- rnorm(1e4,sample_mu,sample_sigma)
+dens(prior_h)
+```
+
+```{r quapgram}
+#Version without year included
+w<-which(is.na(alldata$grammar))
+gramdat<-alldata[-w,]
+gram1 <- quap(
+  alist(
+    grammar ~ dnorm(mu,sigma),
+    mu ~ dnorm(41,5),
+    sigma ~ dunif(0,6)),
+  data=gramdat
+)
+```
+
+
+
+```{r quapgram}
+#Version without year included
+w<-which(is.na(alldata$grammar))
+gramdat<-alldata[-w,]
+gram1 <- quap(
+  alist(
+    grammar ~ dnorm(mu,sigma),
+    mu ~ dnorm(41,5),
+    sigma ~ dunif(0,6)),
+  data=gramdat
+)
+```
+So, interestingly enough, we hit problems here. I think due to the odd distribution, which is left-skewed, with tendency for ceiling effect.
+
+Best way I can make it a little less weird is to invert and log!
+```{r convertgram}
+gramdat$gram2 <- log(51-gramdat$gram)
+dens(gramdat$gram2)
+precis(gramdat$gram2)
+```
+
+Now try quap again
+
+```{r quapgram}
+#Version without year included
+
+mgram2 <- quap(
+  alist(
+    gram2 ~ dnorm(mu,sigma),
+    mu ~ dnorm(2,1),
+    sigma ~ dunif(0,2)),
+  data=gramdat
+)
+precis(mgram2)
+```
+
+```{r gramreg}
+#Note because we have flipped, we expect -ve regression coeff - so I have made it norm rather than unif - but this does mean can predict +ve slopes!
+#Playing with predictions makes me realise I can just make it dnorm(-2,2) to ensure -ve slope is likely
+xbar <- mean(gramdat$year)
+mgram3 <- quap( 
+  alist(
+    gram2~ dnorm( mu , sigma ) ,
+    mu <- a + b*( year - xbar ),
+    a ~ dnorm( 3 , 1 ) ,
+    b ~ dnorm( -1,.5 ) ,
+    sigma ~ dunif( 0 , 2 )
+  ) ,
+  data=gramdat )
+summary(mgram3)
+
+```
+
+We'll now move on to prediction intervals.
+```{r code4.59}
+sim.gram<-sim(mgram3,data=list(year=3:8))
+#From the model simulates 1000 datapoints for each year band
+gram.PI <- apply(sim.gram,2,PI,prob=.89)
+gram.PI
+
+```
+
+```{r regpriorsgram}
+#Now with priors for regression -useful for fine tuning priors
+N = 200
+a <- rnorm(N,3,1)
+#b<- runif(N,-2,0) #this actuallay works here but not in quap!
+b <- rnorm(N,-1,.5) #this version used in quap 
+plot(NULL,xlim=range(gramdat$year),ylim=c(-10,20),xlab='year',ylab='grammar.err')
+xbar<-mean(gramdat$year)
+for (i in 1:N)
+  curve(a[i]+b[i]*(x-xbar),
+        from=min(gramdat$year),to=max(gramdat$year),add=T,
+        col=col.alpha("black",.2))
+```
+
+```{r simgram.ss}
+sim.gram<-sim(mgram3,data=list(year=3:8))
+maxscore <-50
+mychart <- data.frame(matrix(NA,nrow=maxscore,ncol=7))
+colnames(mychart)<-c('Raw','Y3','Y4','Y5','Y6','Y7','Y8')
+
+r <- 1:maxscore #corresponds to raw scores 
+mychart$Raw <- r
+s <- 1:19 #scaled scores
+z <-(10-s)/3 
+p = 1-pnorm(z)
+
+for (mycol in 1:6){
+  mybit<-sim.gram[,mycol]
+  mybit2<-51-exp(mybit) #convert back to original scale!
+  mybit2<-mybit2[order(mybit2)]
+  
+  for (num in 1:maxscore){
+    w1<-which(mybit2>(num-.001))
+    w2 <-which(mybit2<(num+1.001))
+    if(length(w1)==0){w1 <- 1000}
+    if(length(w2)==0){w2 <- 1}
+    if(length(w1)==1000){w1 <- 1}
+    if(length(w2)==1000){w2 <- 1000}
+    #numbers in range w1 to w2 correspond to num
+    ww <- (min(w1)+max(w2))/2000
+    matchp <- min(which(p>ww))
+    if(matchp==Inf) {matchp<-20}
+    mychart[num,(mycol+1)]<-matchp
+  }
+}
+write.csv(mychart,'Grammar_norms.csv',row.names=F)
+```

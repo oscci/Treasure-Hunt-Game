@@ -1,0 +1,375 @@
+---
+title: "Treasure Hunt Growth Analysis, with power"
+output: html_notebook
+---
+
+```{r loadfunctions, echo=F, include=F}
+require(semTools)
+require(lavaan)
+require(tidyverse)
+require(psych) #this includes logistic function, though I have not used it here
+```
+
+### Data analysis plan  
+
+<!--Thoughts: would like to do re-test of STM so we can have an indication of reliability.  
+Would be good to do a quick post-test to measure whether children had been aware of repeated items (similar to Kuppu adult study?). --> 
+
+## Main training experiment (Treasure Hunt game)
+The study design is similar to that used by Hsu and Bishop (2014).  
+There is one between subjects factor (DLD vs Typical), and two repeated measures: Session (1 to 4), and Condition (whether test item comes from a repeated or novel set). There are two covariates: age and short-term memory capacity (STM); the latter is measured in a separate online task.  
+
+In each session, the child is presented with I items; here we present power analyses to consider the impact of different values of I. I needs to be a value divisible by 8, because repeated items come in sets of 4; the structure of the task means that item A, B, C and D will be presented repeatedly in that sequence, interleaved with novel items. 
+
+The power analysis also considers the impact of different number of participants, N, for the sensitivity of detecting effects of interest.  
+
+The task is a learning task in which we expect to see a gradual increase in accuracy over sessions.  The different conditions (repeated vs novel) should not differ at the outset, because all items are originally novel - the impact of repeated items should develop as the study proceeds. We use a linear growth model to estimate slopes and intercepts for the two conditions in each group. <!--- simulation is nonlinear, though departure from linearity is mild - Need Paul's help here - I think a logistic function would capture what we want as our dependent variable is proportion correct).--->
+
+In addition, we predict minimal differences between subject groups (DLD and Typical) at the outset, because the Typical children are selected to match the DLD children on a language comprehension measure that tests understanding of sentences similar to those trained here.  
+
+We first simulate data to correspond to the predicted function of growth in accuracy over time. 
+
+Currently this is done in an ad hoc fashion, first defining a base growth curve that goes from .6 to .99 with a gradual increase for each consecutive trial. We pick .6 as a start level of accuracy consistent with prior observations - in a two-choice situation this is slightly above chance. The total number of trials is I*4, as we have 4 sessions.  
+
+Then for each group x condition, an endpoint, E, is specified, and the base growth curve is then stretched so that the range from the start level (.6) to E is covered in I x 4 trials. This gives us a matrix of probabilties, where the row is the item (1 to I x 4) and the columns are the four combinations of group x condition. We plot this to illustrate that the results match expectations.   
+The generation of the probability matrix is provided in a function that will be called when we come to simulate data.  
+
+
+```{r pfunction}
+makeallcondp<-function(nItem,nsess){
+  basep <- .6 #starting avg probability correct for all items/subjects
+  #group 1 is DLD, group 2= TD
+  #myN is novel, myR is repeated
+  finNgroupD <- .79 #item final p correct for each item in N condition/group1
+  finNgroupT <- .85 #item final p correct for each item in N condition/group2
+  finRgroupD <- .91 #item final p correct for each item in R condition/group1
+  finRgroupT <- .85 #item final p correct for each item in R condition/group2
+  #We use these values to create probability correct matrix
+  #Updated version, use an exponential function for learning.
+  #This was derived by trial and error:see plots for how this looks in practice
+  startseq<-seq(0,.7,length.out=nItem*nsess) #range selected to give plausible range
+  de <-1.49-dexp(startseq) #this function goes from 60% correct at start to 99% by final item
+  basex <-startseq[max(which(de<basep))] #this is value of startseq corresponding to basep
+  baseDN <- startseq[max(which(de<finNgroup1))]
+  baseTN <- startseq[max(which(de<finNgroup2))]
+  baseDR <- startseq[max(which(de<finRgroup1))]
+  baseTR <- startseq[max(which(de<finRgroup2))]
+  DN_p <- 1.49-dexp(seq(basex,baseDN,length.out=nItem*nsess))
+  TN_p <- 1.49-dexp(seq(basex,baseTN,length.out=nItem*nsess))
+  DR_p <- 1.49-dexp(seq(basex,baseDR,length.out=nItem*nsess))
+  TR_p <- 1.49-dexp(seq(basex,baseTR,length.out=nItem*nsess))
+  #item by item probability correct by item type N or R, and by group (1 or 2)
+  allcondp <- data.frame(cbind(DN_p,DR_p,TN_p,TR_p))
+  return(allcondp)
+}
+
+
+```
+
+```{r demoprobs}
+nsess <- 4 #number of sessions; unlikely to vary for practical reasons
+nItem <- 24 #number of items; must be a value divisible by 8
+
+allcondp <- makeallcondp(nItem,nsess)
+
+    #We plot the probabilities to check they make sense
+    plot(1:(nItem*nsess),allcondp$DN_p,type='l',main='Values for true probability, without subject or item error',ylim=c(.5,1),ylab='p.Correct',xlab='Item')
+    lines(1:(nItem*nsess),allcondp$DR_p,lty=2)
+    lines(1:(nItem*nsess),allcondp$TN_p,col='red')
+    lines(1:(nItem*nsess),allcondp$TR_p,lty=2,col='red')
+    abline(v=nItem)
+    abline(v=nItem*2)
+    abline(v=nItem*3)
+    text(10,.9,'black is DLD\ndotted is novel')
+    
+  
+```
+
+Now we have our basic probabilities correct for each item/condition/group combination, we can make a function to simulate data using those values. 
+
+```{r makedata}
+data_sims <- function(nItem, nsub, ncond, nsess, ngroup,allcondp,randsubs,randitems)
+{
+  #Now Vectorised!
+  # nItem = Items per session per condition
+  # nsub = subjects per group
+  # ncond  = 2 conditions (repeated and non)
+  # nsess  = 4 sessions
+  # ngroup = 2 groups
+  # randsubs = term that sets range for random subjects effect
+  # randitems = term that sets range for rand items effect
+  
+  
+  #We increment the probability of correct for each item of each type.
+  #Rate of increase can vary by item type and group
+  
+  groupcode <- c('D','T') #group-1 is DLD ; group1 is TD
+  condcode <-c(0,1) #cond0 is novel ; cond1 is repeated
+  simdat<-expand.grid(1:nsub,groupcode,1:nsess,1:nItem,condcode)
+  colnames(simdat) <- c('Subject','Group','Session','Item','Condition')
+  w<-which(simdat$Group=='T')
+  simdat$Subject[w] <- simdat$Subject[w]+nsub #codes must be different for subs in 2 groups, so add offset
+  
+  simdat$allorder<-simdat$Item + (simdat$Session-1)*nItem #order rather than item ID determines avg learning
+  w<-which(simdat$Condition==1)
+  simdat$Item[w] <- simdat$Item[w]+nItem #codes must be different for items in 2 conditions, so add offset - this is item identity, for random effects. We *could* make this more constant for the Repeated items, but because they do vary in distractors etc, better to make distinct for each one
+  simdat$GroupCond <- simdat$Condition+1 #we need to set numeric codes for each combination in interaction in order to use vectorised formula. For 2 x 2, codes are 1,2,3,4
+  w<-which(simdat$Group=='T')
+  simdat$GroupCond[w]<-simdat$GroupCond[w]+2 #add 2 for group2, so get values 3-4
+  
+  simdat$Correct <- 1 #default response is correct
+  myrands <- runif(nrow(simdat)) #uniform random numbers 0-1 for each row
+  subeff<-runif((nsub*2),-randsubs,randsubs) #one effect per subject - range specified by randsubs; e.g. if randsubs is .1, then each subject has offset ranging from -.1 to .1
+  itemeff<-runif(nItem*2,-randitems,randitems) #one effect per item - range specified by randitems
+  simdat$allcondrow<-simdat$allorder+(simdat$Session-1)*nItem #serial order of this stimulus across all sessions
+  
+  #We now use predetermined allcondp table to lookup cutoff probability for each row's GroupCond combination.  The allcondp table can be created to give nonlinear and range-restricted values
+  for(j in 1:nrow(simdat)){ #can't work out how to vectorise this!
+    simdat$criticalp[j]<-allcondp[simdat$allorder[j],simdat$GroupCond[j]]
+  }
+  simdat$criticalp <- simdat$criticalp+subeff[simdat$Subject]+itemeff[simdat$Item]
+  #previous line adds noise to the criticalp from subject and item effects
+  simdat$Correct[simdat$criticalp<myrands]<-0
+  return(simdat)
+}
+```
+
+We can test the function and view a set of simulated data. 
+
+```{r checksimulation}
+nItem <- 24
+nsub <- 20
+ncond <- 2
+nsess <- 4
+ngroup <- 2
+randsubs <- .01
+randitems <-.01
+allcondp <- makeallcondp(nItem,nsess)
+
+simdat <- data_sims(nItem, nsub, ncond, nsess, ngroup,allcondp,randsubs,randitems)
+
+#now plot means
+mytime <- aggregate(simdat$Correct,by=list(simdat$Session,simdat$Subject,simdat$Group,simdat$Condition,simdat$GroupCond),FUN=mean)
+colnames(mytime)<-c('Session','ID','Group','Condition','GroupCond','Correct')
+mytime$GroupCond<-as.factor(mytime$GroupCond)
+levels(mytime$GroupCond)<-c('DLD_novel','DLD-rep','TYP_novel','TYP_rep')
+mymeans<-aggregate(mytime$Correct,by=list(mytime$Session,mytime$GroupCond),FUN=mean)
+colnames(mymeans)<-c('Session','GroupCond','Correct')
+mymeans %>%
+  ggplot( aes(x=Session, y=Correct, group=GroupCond, color=GroupCond)) +
+  ggtitle('Simulated data')+
+  geom_line()
+
+```
+### Growth model
+
+To check suitability of analysis and sensitivity to effects of interest with different sample sizes and numbers of items, we now run a growth model in lavaan (Rosseel, 2012).  
+See:   
+https://lavaan.ugent.be/tutorial/growth.html
+see also https://groups.google.com/g/lavaan/c/SuPoUUKWraY
+
+
+
+```{r growthmodels, include=F, echo=F}
+
+
+model <- ' i =~ 1*t1 + 1*t2 + 1*t3 + 1*t4
+           s =~ 0*t1 + 1*t2 + 2*t3 + 3*t4 
+# regressions
+ # i ~ Condition
+  s ~ Condition'  
+
+model.s.eq <- ' i =~ 1*t1 + 1*t2 + 1*t3 + 1*t4
+           s =~ 0*t1 + 1*t2 + 2*t3 + 3*t4 
+# regressions
+ # i ~ Condition  #
+  s ~ c(a2, a2)*Condition' #equate average effect of Condition on slope between groups
+
+model.si.eq <- ' i =~ 1*t1 + 1*t2 + 1*t3 + 1*t4
+           s =~ 0*t1 + 1*t2 + 2*t3 + 3*t4 
+# regressions
+ # i ~ c(a1, a1)*Condition  #equate average effect of Condition on intercept between groups
+  s ~ c(a2, a2)*Condition' #equate average effect of Condition on slope between groups
+
+```
+
+N.B. The lavaan syntax requires data in wide format with time points in columns, so we have to reshape simulated data.  We then run all three models on the data so we can compare their fit.  Summary results from model-fitting are saved to a resultdf data frame which is saved as a file so it can later be used for power analysis.  
+
+```{r runsims}
+niter=100 #number of iterations - keep small when testing; use 1000 or more for final power
+#Make a data frame to hold simulation results
+
+resultdf<-data.frame(matrix(NA,nrow=niter,ncol=20))
+colnames(resultdf)<-c('run','nsub.gp','nitem.cond',
+                      'iDLD','iDLD.se','iDLD.p',
+                      'sDLD','sDLD.se','sDLD.p',
+                      'iTYP','iTYP.se','iTYP.p',
+                      'sTYP','sTYP.se','sTYP.p',
+                      'chi.base','cfi.base','rmsea.base',
+                      'chi.s.eq','chi.si.eq')
+
+nsess <- 4
+randsubs <- .01
+randitems <-.01
+itemvalues<-c(16,24)
+subvalues<-c(24,30,35,40)
+for (nItem in itemvalues) { #items per condition per session
+  for (nsub in subvalues){ #subjects per group
+    
+    allcondp<-makeallcondp(nItem,nsess)
+    
+    
+    for (n in 1:niter){
+      print(n)
+      #NB allcondp is a matrix : must be defined in previous chunk
+      simdat <- data_sims(nItem, nsub, ncond = 2, nsess, ngroup = 2,allcondp,randsubs,randitems)
+      
+ #Compute means by session and reformat data to wide form     
+      mytime <- aggregate(simdat$Correct,by=list(simdat$Session,simdat$Subject,simdat$Group,simdat$Condition,simdat$GroupCond),FUN=mean)
+      spreaddat<-mytime %>% spread(Group.1,x)
+      tnames<-paste0('t',1:nsess) #allows for flexible N sessions
+      colnames(spreaddat)<-c('ID','Group','Condition','GroupCond',tnames) 
+
+# Now fit all three models, starting with basic 2 group model with no constraints      
+      fit.model <- growth(model, data=spreaddat,group='Group',verbose=F)
+      s<-summary(fit.model)
+      fm<-fitMeasures(fit.model)
+      
+      fit.model.s.eq <- growth(model.s.eq, data=spreaddat,group='Group',verbose=F)
+      s1<-summary(fit.model.s.eq)
+      fs.eq<-fitMeasures(fit.model.s.eq) #here we specify that slopes are equal across groups
+      
+      fit.model.si.eq <- growth(model.si.eq, data=spreaddat,group='Group',verbose=F)
+      s2<-summary(fit.model.si.eq)
+      fsi.eq<-fitMeasures(fit.model.si.eq) #here we specify that slopes and intercepts are equal across groups
+      
+      #Assemble results from model fitting into a data frame, one row per iteration of simulation
+      #The indices from s$PE were obtained by inspecting the output
+      resultdf[n,1]<-n
+      resultdf[n,2]<-nsub
+      resultdf[n,3]<-nItem
+      resultdf[n,4:6]<-s$PE[9,c(7,8,10)]
+      resultdf[n,7:9]<-s$PE[10,c(7,8,10)]
+      resultdf[n,10:12]<-s$PE[34,c(7,8,10)]
+      resultdf[n,13:15]<-s$PE[35,c(7,8,10)]
+      resultdf[n,16]<-fm[3]
+      resultdf[n,17]<-fm[9]
+      resultdf[n,18]<-fm[23]
+      resultdf[n,19]<-fs.eq[3]
+      resultdf[n,20]<-fsi.eq[3]
+      
+      
+    }
+    
+    #Test difference in chi square for slopes equal model vs not equal
+    resultdf$s.eq.p <- 1-pchisq((resultdf$chi.s.eq-resultdf$chi.base),1)
+      #Test difference in chi square for slopes and intercepts equal model vs not equal
+    resultdf$si.eq.p <- 1-pchisq((resultdf$chi.si.eq-resultdf$chi.base),1)
+    appendage<- '_4blocks' #can change this to ensure file saved with distinctive name and doesn't overwrite previous
+    fname<-paste0('resultdf_',niter,'iter_',nsub,'N_',nItem,'items',appendage,'.csv')
+    
+    write.csv(resultdf,fname,row.names=F) #save the summary results from simulation
+    
+  }
+}
+```
+
+We now can compare power for simulations with different parameters.  
+Our main interest is in whether we have power to detect an effect of condition on slope in the DLD group, as this effect is built into our simulated data.  We want power to be low for detecting effects of condition on slope in Typical, and for effect of condition on intercept in both groups. If we see these effects they will be false positives.  
+
+We also are interested in the effect to detect superior fit for a model where the two groups have different slope values.  In general, the simulation shows that the kinds of sample sizes simulated here have good power to differentiate a model where groups are constrained to have the same intercepts and slopes, which gives much worse fit than when the two groups are free to vary.  If slopes only are constrained, however, power is mediocre. 
+
+Question for Paul: can we set the model so that Condition has no effect on intercept for either group? It should not because the two conditions are indistinguishable at the outset. 
+I tried doing this and power improved dramatically but I was unsure if I had done this correctly. 
+
+```{r computepower}
+powerreport<-function(myfile,mytext,mycolumn){
+  thiscol<-which(colnames(myfile)==mycolumn)
+  powbit <-length(which(myfile[,thiscol]<.05))/niter
+  print(paste(mytext, powbit))
+  return(powbit)
+}
+
+
+niter <- 500
+itemvalues<-c(20,24)
+subvalues<-c(24,30,35,40)
+powertab<-expand.grid(subvalues,itemvalues)
+colnames(powertab)<-c('nsub','nitem')
+powertab$p.si<-NA
+powertab$p.s <-NA
+powertab$p.DLDi<-NA
+powertab$p.DLDs<-NA
+powertab$p.TYPi<-NA
+powertab$p.TYPs<-NA
+
+appendage<- '_4blocks'
+
+thisrow<-0
+
+for (nItem in itemvalues) { #vector for items per condition per session
+  for (nsub in subvalues){ #vector for subjects per group
+    thisrow<-thisrow+1
+    fname<-paste0('resultdf_',niter,'iter_',nsub,'N_',nItem,'items',appendage,'.csv')
+    print(fname)
+    myfile<-read.csv(fname,stringsAsFactors=F)
+    powertab$nsub[thisrow]<-nsub
+    powertab$nItem[thisrow]<-nItem
+    mytext<-'power to detect group difference in slope/intercept on Condition:'
+    mycolumn<-'si.eq.p'
+    powbit<-powerreport(myfile,mytext,mycolumn)
+    powertab$p.si[thisrow]<-powbit
+    
+    mytext<-'power to detect group difference in slope on Condition only:'
+    mycolumn<-'s.eq.p'
+    powbit<-powerreport(myfile,mytext,mycolumn)
+    powertab$p.s[thisrow]<-powbit
+    
+    mytext<-'power to detect condition effect on intercept in DLD:'
+    mycolumn<-'iDLD.p'
+    powbit<-powerreport(myfile,mytext,mycolumn)
+    powertab$p.DLDi[thisrow]<-powbit
+    
+    mytext<-'power to detect condition effect on slope in DLD:'
+    mycolumn<-'sDLD.p'
+    powbit<-powerreport(myfile,mytext,mycolumn)
+    powertab$p.DLDs[thisrow]<-powbit
+    
+    mytext<-'power to detect condition effect on intercept  in TYP:'
+    mycolumn<-'iTYP.p'
+    powbit<-powerreport(myfile,mytext,mycolumn)
+    powertab$p.TYPi[thisrow]<-powbit
+    
+    mytext<-'power to detect condition effect on slope  in TYP:'
+    mycolumn<-'sTYP.p'
+    powbit<-powerreport(myfile,mytext,mycolumn)
+    powertab$p.TYPs[thisrow]<-powbit
+  }
+}
+powertab$nitem<-as.factor(powertab$nItem)
+powertab %>%
+  ggplot( aes(x=nsub, y=p.DLDs, group=nitem, color=nitem)) +
+  ggtitle('Power to detect effect of condition on slope, DLD group')+
+  ylim(0,1)+
+  geom_line()
+
+powertab %>%
+  ggplot( aes(x=nsub, y=p.si, group=nitem, color=nitem)) +
+  ggtitle('Power to detect worsening fit if same s and i for DLD and TYP')+
+  ylim(0,1)+
+  geom_line()
+
+powertab %>%
+  ggplot( aes(x=nsub, y=p.s, group=nitem, color=nitem)) +
+  ggtitle('Power to detect worsening fit if same s DLD and TYP, i free to vary')+
+  ylim(0,1)+
+  geom_line()
+```
+
+
+
+## References  
+Hsu, H. J., & Bishop, D. V. M. (2014). Training understanding of reversible sentences: a study comparing language-impaired children with age-matched and grammar-matched controls. PeerJ, 2, e656-e656. doi:10.7717/peerj.656  
+
+Rosseel, Y. (2012). lavaan: An R Package for Structural Equation Modeling. Journal of Statistical Software, 48, 1-36. Retrieved from http://www.jstatsoft.org/v48/i02/.
+

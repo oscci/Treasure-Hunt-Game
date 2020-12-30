@@ -1,0 +1,233 @@
+---
+title: "Power DLD within subs"
+output: html_notebook
+---
+
+# R script for Treasure Hunt game (Adam and Dorothy) - 
+
+1/12/20
+based on DVMBscript 18/10/2020
+ which is based on Paul Thompson - 07/10-2020
+
+In this version, each child gets repeated items from sentence frame A (e.g. the X is above/below the Y) and novel items from sentence frame B (e.g. the X is between the Y and the Z). Frames are counterbalanced between children.
+
+We predict faster within-session improvement for the repeated condition, but better transfer to new items in a posttest for the novel condition.
+
+ Analysis is uses generalized linear mixed effect model 
+(Binomial family - proportion as dependent var, but simulated as binary response to individual items then converted to proportion correct by session).
+# 
+ The  model has one random effect: 
+ random slopes of individuals  - learning rate varies between individuals
+  Item effects are not modelled: all items of same kind and assumed to have negligible effect.
+
+
+
+# Analysis A.
+Our principal question is whether learning rate is affected by Condition in the DLD group. Factors are Session x Condition.
+
+# Analysis B
+Repeat with memory span as covariate. This is predicted to have a big impact on learning rate.
+
+# Analysis C
+For posttest, we just have a single dependent variables (% correct) for two sentence types, with pretest score as covariate. We predict better learning for frame B (novel)
+
+
+# Use Dorothy's simulation of the data to make as close as possible. Then fit GLMM approach.
+
+```{r packageload}
+# Load required R packages
+library(lme4)
+library(dplyr)
+library(ggplot2)
+library(ggeffects)
+```
+
+```{r simulatedata}
+#==============================================================================#
+
+data_sims <- function(nItem, nsub, ncond, nsess,allcondp,randsubs,randitems)
+{
+  #Now Vectorised!
+  # nItem = Items per session per condition
+  # nsub = subjects per group
+  # ncond  = 2 conditions (repeated and non)
+  # nsess  = 4 sessions
+  # #NO  GROUP THIS TIME
+  # randsubs = term that sets range for random subjects effect
+  # randitems = term that sets range for rand items effect
+  
+  
+  #We increment the probability of correct for each item of each type.
+  #Rate of increase can vary by item type and group
+  
+  condcode <-c(0,1) #cond0 is novel ; cond1 is repeated
+  simdat<-expand.grid(1:nsub,1:nsess,1:nItem,condcode)
+  colnames(simdat) <- c('Subject','Session','Item','Condition')
+  
+  simdat$allorder<-simdat$Item + (simdat$Session-1)*nItem #order rather than item ID determines avg learning
+  w<-which(simdat$Condition==1)
+  simdat$Item[w] <- simdat$Item[w]+nItem #codes must be different for items in 2 conditions, so add offset - this is item identity, for random effects. We *could* make this more constant for the Repeated items, but because they do vary in distractors etc, better to make distinct for each one
+
+  simdat$Correct <- 1 #default response is correct
+  myrands <- runif(nrow(simdat)) #uniform random numbers 0-1 for each row
+  subeff<-runif((nsub*2),-randsubs,randsubs) #one effect per subject - range specified by randsubs; e.g. if randsubs is .1, then each subject has offset ranging from -.1 to .1
+  itemeff<-runif(nItem*2,-randitems,randitems) #one effect per item - range specified by randitems
+  simdat$allcondrow<-simdat$allorder+(simdat$Session-1)*nItem #serial order of this stimulus across all sessions
+  
+  #We now use predetermined allcondp table to lookup cutoff probability for each row's condition combination.  The allcondp table can be created to give nonlinear and range-restricted values
+  simdat$criticalp<-NA
+  for(j in 1:nrow(simdat)){ #can't work out how to vectorise this!
+    simdat$criticalp[j]<-allcondp[simdat$allorder[j],(1+simdat$Condition[j])]
+  }
+  simdat$criticalp <- simdat$criticalp+subeff[simdat$Subject]+itemeff[simdat$Item]
+  #previous line adds noise to the criticalp from subject and item effects
+  simdat$Correct[simdat$criticalp<myrands]<-0
+  return(simdat)
+}
+```
+
+Function to make probability distribution
+
+```{r makeps}
+makeallcondp<-function(nItem,nsess){
+  basep <- .6 #starting avg probability correct for all items/subjects
+
+  #myN is novel, myR is repeated
+  finNgroupD <- .79 #item final p correct for each item in N condition/group1
+  finRgroupD <- .91 #item final p correct for each item in R condition/group1
+
+    #We use these values to create probability correct matrix
+  #Updated version, use an exponential function for learning.
+  #This was derived by trial and error:see plots for how this looks in practice
+  startseq<-seq(0,.7,length.out=nItem*nsess) #range selected to give plausible range
+  de <-1.49-dexp(startseq) #this function goes from 60% correct at start to 99% by final item
+  basex <-startseq[max(which(de<basep))] #this is value of startseq corresponding to basep
+  baseDN <- startseq[max(which(de<finNgroupD))]
+  baseDR <- startseq[max(which(de<finRgroupD))]
+  DN_p <- 1.49-dexp(seq(basex,baseDN,length.out=nItem*nsess))
+  DR_p <- 1.49-dexp(seq(basex,baseDR,length.out=nItem*nsess))
+   #item by item probability correct by item type N or R
+  allcondp <- data.frame(cbind(DN_p,DR_p))
+  return(allcondp)
+}
+```
+
+#==============================================================================#
+# Use simulated data and fit model to first simulated data set.
+
+```{r makeandfit}
+nItem <- 12
+nsub <- 24 # 
+ncond <- 2
+nsess <- 4
+randsubs <- .05
+randitems <-.01 
+
+allcondp <- makeallcondp(nItem,nsess)
+
+expdat <- data_sims(nItem, nsub, ncond, nsess,allcondp,randsubs,randitems)
+
+#now plot means
+expdat2 <- aggregate(expdat$Correct,by=list(expdat$Session,expdat$Subject,expdat$Condition),FUN=mean)
+colnames(expdat2)<-c('Session','Subject','Condition','p.Correct')
+
+expdat2$Condition<-as.factor(expdat2$Condition)
+mymeans<-aggregate(expdat2$p.Correct,by=list(expdat2$Session,expdat2$Condition),FUN=mean)
+colnames(mymeans)<-c('Session','Condition','p.Correct')
+mymeans %>%
+  ggplot( aes(x=Session, y=p.Correct, group=Condition, color=Condition)) +
+  ggtitle('Simulated data')+
+  geom_line()
+
+hist(mymeans$p.Correct)
+fit1 <- glmer(p.Correct ~ 1+Condition*Session  + (0 + Session | Subject), family = binomial, data = expdat2,weights=rep(nItem,nrow(expdat2)),
+              control=glmerControl(optimizer="bobyqa", optCtrl=list(maxfun=2e5))) #random slopes of subject only, no random intercept.
+
+
+#=========================================================================#
+# Plot the simulated data and the predicted model fit to compare to Dorothy's proposed idea of what the data look like.
+dat<-ggpredict(fit1,c("Session","Condition"),type="re") #Extract predicted values for the proportions
+colnames(dat)<-c("Session", "p.Correct",  "Condition")
+
+ggplot(dat,aes(x=Session,y=p.Correct,colour=Condition))+geom_line()+theme_bw()
+
+```
+
+
+# Power calculation 
+
+
+ https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4579019/ #Supplementary info 1.
+
+```{r functionforsims}
+fitsim2 <- function(i,nItem,nsub) {
+  
+  expdat <- data_sims(nItem, nsub, ncond, nsess,allcondp,randsubs,randitems)
+  
+  
+  #now aggregate means
+  expdat2 <- aggregate(expdat$Correct,by=list(expdat$Session,expdat$Subject,expdat$Condition),FUN=mean)
+  colnames(expdat2)<-c('Session','Subject','Condition','p.Correct')
+  expdat2$Condition<-as.factor(expdat2$Condition)
+  
+  fit1 <- glmer(p.Correct ~ 1+Condition*Session+ (0 + Session | Subject), family = binomial, data = expdat2,weights=rep(nItem,nrow(expdat2)),control=glmerControl(optimizer="bobyqa", optCtrl=list(maxfun=2e5)))
+  
+  sumfit<-summary(fit1)
+  
+  tt <- getME(fit1,"theta")
+  ll <- getME(fit1,"lower")
+  singular<-min(tt[ll==0])
+  pval1<-sumfit$coefficients['Session',4]
+  pval2<-sumfit$coefficients['Condition1',4]
+  pval3<-sumfit$coefficients['Condition1:Session',4]
+  return(c(pval1,pval2,pval3,singular))
+}
+```
+
+#####################################################################
+
+
+ 
+ 
+# fit model to first simulated data set.  
+
+
+```{r runsim_dffscores, warning=F}
+nsim <- 1000
+nItem <- 12
+sublevels <- c(25,30,35,40) # 
+ncond <- 2
+nsess <- 4
+randsubs <- .05
+randitems <-.01 
+
+
+powerdfd<-data.frame(matrix(NA,nrow=length(sublevels),ncol=8))
+colnames(powerdfd)<-c('nsub',	'nitem',	'nsim',	'randsubs','randitems','powSess',	'powCond','powSess.Cond')
+powerdfd$randsubs<-randsubs
+powerdfd$nsim<-nsim
+powerdfd$randitems<-randitems
+
+thisrow<-0
+for (nsub in sublevels){
+  print(nsub)
+thisrow<-thisrow+1
+powerdfd$nsub[thisrow]<-nsub
+powerdfd$nitem[thisrow]<-nItem
+allcondp <- makeallcondp(nItem,nsess)
+pvals<-laply(seq(nsim),function(i){fitsim2(i,nItem,nsub)})
+
+powerdfd$powSess[thisrow]<-mean(pvals[,1] < 0.05)
+powerdfd$powCond[thisrow]<-mean(pvals[,2] < 0.05)
+powerdfd$powSess.Cond[thisrow]<-mean(pvals[,3] < 0.05)
+}
+
+powname<-"powerDLD.csv"
+write.csv(powerdfd,powname)
+```
+
+
+
+
+
+ 

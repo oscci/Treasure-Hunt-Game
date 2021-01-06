@@ -7,6 +7,9 @@ require(tidyverse)
 require(gtools) #for permutations
 ```
 Used to generate item combinations for 2020 version of Treasure Hunt.
+#Update 5th Jan 2021
+Generating spreadsheets for version in Registered Report with different constructions in Rep and Novel.
+
 ------------------------------------------------------------------------
 #IMPORTANT UPDATE
 1st August 2020 : I have set.seed to make spreadsheets reproducible.
@@ -21,31 +24,26 @@ Also corrected to ensure fixed item is not in array; and repeated item is repeat
 
 Tried with 3 repeated items rather than 4, so can get in more repetitions per session. However, this messes up counterbalancing: e.g. with 'above and below' you want half the repeated items to be above and half below. So reverted to 4.
 
-so sequence is A N1 B N2 C N3 D N4 A N5 B N6 C N7 D N8 etc. This means if we have 3 rounds of A/B/C/D per session, we have 3 x 8  =24 items per session. For 4 rounds 4 x 8 = 32 items per session. We will go for 5 rounds, ie 5 x 8 = 40 items per session (20 of each type). We can always cut down if this is too many.
+so sequence is A N1 B N2 C N3 D N4 A N5 B N6 C N7 D N8 etc. This means if we have 3 rounds of A/B/C/D per session, we have 3 x 8  =24 items per session. 
+This seems the maximum that we can expect children to do and so we have powered the study accordingly.
 
-Need to fix power with N items PER TYPE and check we have that right.
-In each session, for now will go for 5 rounds using 4 repeated items (each followed by a novel item), this gives 40 items in total per session.
+Need enough items for 4 sessions, i.e. 24 x 4 items altogether.  
+The repeated item, by definition, is taken from a repeated set of 4
 
-Need enough items for 4 sessions, i.e. 40 x 4 items altogether.  
-The repeated item, by definition, is taken from a repeated set of 3, but it would be good to have alternative versions of novel items (A-C) so that we avoid any effects due to specific stimuli being used.  However, my attempt to do that in one go just created havoc, so here we just will create one set.
-If we want a different set later, we would need to change set.seed() above and then run the script to generate a completely fresh set of items.
 ------------------------------------------------------------------------
-## Difficulty levels: this is between subjects
-We need items for two levels that use 2-item combinations, and for 2 levels that use 3-item combinations (we dropped one original level)
+## Difficulty level: this is now not varied.
+ Everyone gets above/below or between
+Two sets counterbalanced
+
 Levels now are; 
 #Table 1 (as per registered report)
 Level 1	Level 2	Level 3	Level 4  
-Open boxes	      2	    2	      2	        2  
-N items to select	1	    2	      2	        2  
-N pre-fixed items	1	    0	      1	        1  
 
-Sample sentences	 
-“The boat is below the scarf”	  
-“The shirt is above the door”	  
 “The hen is between the star and the flag”	  
-“The bed is next to the tree and below the jug"  
+“The bed is above the tree and next to the jug"  
 
-If we just create 4 (levels) x 4 (blocks) x 36 3-item combinations, we can then just use the 3rd item as a distractor for levels 1-2. This is 576 combinations.
+IWe create 2 frames x 4 (blocks) x 12 3-item combinations
+This is 96 combinations.
 Currently our stimulus pool is 32 pictured target words
 
 Grid positions denoted in RowColumn format, ie..
@@ -67,12 +65,6 @@ a) With 'between' - we could include both vertical and horizontal grid positions
 b) I have reworded level 4 items so it is not 2 sentences, but instead uses the format, e.g. the X is above the Y and next to the Z. This differs from Nicole's level 5.
 c) Note that with the Repeated Items, it is currently set up to select at random the picture that will be pre-placed in the grid (where there is a preplaced item).  So the sentence is repeated but the display may vary. It would be possible to alter this - probably easiest to just do this at the final stage after spreadsheet created, at which point one could identify repeated items and just overwrite them so that each of the items was constant. But I think we are mostly interested in the impact of improved comprehension from hearing repeated sentence, and that to have this to some extent dissociated from the visual display is a good thing. This has now been clarified when describing methods
 
-## Updates 2nd June 2020 (ALL DONE NOW)
-Now comparing outputs to Nicole spreadsheets:
-For level 1, 2 corrections to be made:  
-1. the already placed item should not be included in the AnswerChoice field
-2. there are open spaces above and below
-
 ## Updates 3rd June 2020
 Had a couple of minor edits:
 1) spreadsheets now write to a 'sheets' folder- make things a little neater.
@@ -83,7 +75,7 @@ Had a couple of minor edits:
 ```{r items}
 set.seed(20) #make reproducible
 myitems <- c( "clock","flag","car","cup","watch","kite","van","jug","wheel", "hen", "heart",  "lamp", "bat", "chain",  "spoon", "bed", "scarf", "pen", "leaf", "snail", "fly", "boat",  "crab", "drum", "box", "eye",  "leg", "fox",  "shirt", "bell",  "door", "plug",  "tree") 
-
+itemcount<-length(myitems)
 #NB These have been ordered so that 4 potentially confusible pairs occur at the front of the list; these are
 # clock-watch
 # flag-kite
@@ -92,7 +84,7 @@ myitems <- c( "clock","flag","car","cup","watch","kite","van","jug","wheel", "he
 # This ordering will make it relatively easy to ensure they don't co-occur in an item - see below
 
 #get all permutations of 3 different items
-permlist <- as.data.frame(permutations(n=32,r=3,v=myitems,repeats.allowed=F))
+permlist <- as.data.frame(permutations(n=32,r=3,v=1:itemcount,repeats.allowed=F))
 ```
 
 This generates all possible 3-item permutations (ie ordered combinations) of the 32 words. There are 29760 of them, so we have plenty to choose from.
@@ -106,15 +98,15 @@ To do (a) we'd need to specify lists of items that should not occur together, th
 
 To do (b), just need a simple check.
 
-So approach could be select 400 triplets by sampling at random, and accept each one if it meets criteria.
+So approach could be select 96 triplets by sampling at random, and accept each one if it meets criteria.
 
 ```{r sampletrios}
-nrepstim <- 4
-nreps <-5
+nrepstim <- 4 #these are N items that will be repeated per session
+nreps <-3  #N repetitions of each repeated item within a session
 
-itemtype<-c('R01','R02','R03','R04','N01','N02','N03','N04','N05','N06','N07','N08','N09','N10','N11','N12','N13','N14','N15','N16','N17','N18','N19','N20')
+itemtype<-c('R01','R02','R03','R04','N01','N02','N03','N04','N05','N06','N07','N08','N09','N10','N11','N12')
 
-nlevels<-4
+nlevels<-2 #just two levels which will be counterbalanced
 nsess<-4
 ntrio<-length(itemtype)#make data frame to hold trios
 mytrio <- data.frame(matrix(NA,nrow=nlevels*nsess*ntrio,ncol=13))
@@ -122,8 +114,9 @@ mytrio <- data.frame(matrix(NA,nrow=nlevels*nsess*ntrio,ncol=13))
 colnames(mytrio)<-c('num1','num2','num3','num4','num5','pic1','pic2','pic3','pic4','pic5','itemtype','level','session')
 myn <- nrow(permlist)
 counter <- 0
-nitems <- 40 #NB we will use this later on when compiling Gorilla sheet. Note that because of repeated items, the N trios is less than this.
-#Currently this is N items per session, with 4 repeated items presented 5 times plus one novel item for each
+nitems <- 12 #items per session per level (ie sentence type)
+#NB we will use this later on when compiling Gorilla sheet. Note that because of repeated items, the N trios is less than this.
+#Currently this is N items per session, with 4 repeated items presented 3 times plus one novel item for each
 for(level in 1:nlevels){
   for(session in 1:nsess){
     for (item in 1:ntrio){
@@ -132,7 +125,7 @@ for(level in 1:nlevels){
       #But we start with mymatch set to 1 to ensure we enter the loop, and we only exit it when mymatch changes to zero - which it will do when there is no match with the prior 4 items
       mymatch<-1
       while(mymatch==1){
-        thisone <- sample(myn,1) #we will return her to resample if there is overlap in the pictures within last 4 items
+        thisone <- sample(myn,1) #we will return here to resample if there is overlap in the pictures within last 4 items
         mytrio[counter,1:3]<-permlist[thisone,1:3]
         #we'll check the prior 4 items to ensure no overlap in pics
         testlist<-vector()
@@ -166,12 +159,12 @@ for(level in 1:nlevels){
     }
   }
 }
-
-
+#For now we will ignore frames 1 and 2, so level will translate to 3 and 4
+mytrio$level <- mytrio$level + 2
 ```
 
 This seemed to work!  
-We have 384 trios, with no overlap in items between items within 4-items apart. I think we also have avoided having conflicting pairs of picturs together in an item.
+We have 128 trios, with no overlap in items between items within 4-items apart. I think we also have avoided having conflicting pairs of picturs together in an item.
 
 We need to also specify distractors for pic4 (and also pic5 - 5 pics needed if one is already placed! - this added 27/7/20) . 
 We just add a picture that can be anything, provided it isn't already in the array.
@@ -251,6 +244,8 @@ sentenceframe<- c('The_X_is_above_the_Y',
 )
 sentenceframe<-as.data.frame(sentenceframe)   
 
+
+
 #Make grid that assigns sentence depending on item type and level
 #We'll use this as a lookup table to create sentence for each item in mytrio
 myt<-data.frame(table(mytrio$itemtype,mytrio$level)) #construct data frame from table
@@ -262,13 +257,13 @@ myt<-myt[,-3] #lose 3rd column
 myt$sentence <-0 #initialise
 #We have to hard code the allocation of sentence types to levels
 
-myt$level<-as.numeric(myt$level)
+myt$level<-as.numeric(myt$level)+2 #convert from 1-2 to 3-4
 #levels 1 and 2 - just alternate above and below (sentences 1-2)
-w<-which(myt$level<3)
-seq1 <- seq(from=1,to = max(w),by =2)
-myt$sentence[seq1] <- 1
-seq2<-seq1+1
-myt$sentence[(seq2)] <- 2 #below items
+# w<-which(myt$level<3)
+# seq1 <- seq(from=1,to = max(w),by =2)
+# myt$sentence[seq1] <- 1
+# seq2<-seq1+1
+# myt$sentence[(seq2)] <- 2 #below items
 
 #level 3 - all are 'between'
 w<-which(myt$level == 3)
@@ -435,23 +430,31 @@ for(a in 1:length(matrixpos)){
 }
 
 #now populate spreadsheet: alternate repeated items (1-4) and novel.
+for(mylevel in 3:4){
 
-itemorder <- c(1,5,2,6,3,7,4,8,1,9,2,10,3,11,4,12,1,13,2,14,3,15,4,16,1,17,2,18,3,19,4,20,1,21,2,22,3,23,4,24)
+itemorder <- c(1,21,2,22,3,23,4,24,1,25,2,26,3,27,4,28,1,29,2,30,3,31,4,32)
+if (mylevel==4){
+  itemorder <- c(17,5,18,6,19,7,20,8,17,9,18,10,19,11,20,12,17,13,18,14,19,15,20,16)
+}
+#,3,11,4,12,1,13,2,14,3,15,4,16)
+#,1,17,2,18,3,19,4,20,1,21,2,22,3,23,4,24)
+
+
 
 maxm <-c(2,2,3,3,3) #this specifies how many elements to be considered when adding grid details (see below)
 
 maxsession <- 4
 
 for (mysession in 1:4){
-  for (mylevel in 1:4){
+ 
     
-    myspreadsheet <- data.frame(matrix(NA,ncol=length(spreadsheetcols),nrow=nitems))
+    myspreadsheet <- data.frame(matrix(NA,ncol=length(spreadsheetcols),nrow=nitems*2))
     colnames(myspreadsheet) <- spreadsheetcols
     gridstart <- which(colnames(myspreadsheet)=='A1')
     gridcols <- gridstart:gridstart+15
     maxrow <- nrow(myspreadsheet)
     #Make list of items for this session
-    thisbatch <- filter(mytrio,level==mylevel,session==mysession)
+    thisbatch <- filter(mytrio,session==mysession)
     
     myspreadsheet$Item <- thisbatch$itemtype[itemorder]
     myspreadsheet$Session <- thisbatch$session[itemorder]
@@ -553,7 +556,7 @@ for (mysession in 1:4){
       myspreadsheet[w1,a]<-NA
     } #next a (ie next cell column)
     
-    spreadname<-paste0('./sheets/SheetSession', mysession, 'Level', '_', mylevel,'.csv') # changed to work with gorilla mechanic
+    spreadname<-paste0('./sheets/SheetSession', mysession, 'Level', '_', mylevel,'Rep.csv') # changed to work with gorilla mechanic
     
     w<-which(colnames(myspreadsheet)=='Choice5')
     myspreadsheet<-myspreadsheet[,-w]
@@ -564,7 +567,7 @@ for (mysession in 1:4){
                 sep = ",")
     
     
-  } #next level
+} #next level
   
 } #next session
 

@@ -13,7 +13,8 @@
 library(groundhog)
 groundhog.library(magick,"2020-12-01")
 picdir <- "~/Dropbox/magic images/colored PNG/"
-mydir <- "~/Dropbox/magic images/assembled_pics/"
+mydir <- "~/Dropbox/magic images/assembled_picsB/"
+
 
 myitems<-read.csv(paste0(picdir,'multipic_items.csv'))
 
@@ -58,7 +59,7 @@ for (i in 1:nitem){
   Xword <- myitems$pic[mynum1]
   Yword <- myitems$pic[(mynum1+1)]
   Zword <- myitems$pic[(mynum1+2)]
-  typelist <- c(1,2,3,4,3,2,4,1,3,1,2,4,4,3,2,1,2,1,3,4,3,1,4,2) #quasirandom order of items
+  typelist <- c(1,2,4,1,3,2,4,1,3,3,2,4,4,3,2,1,2,1,3,4,3,1,4,2) #quasirandom order of items
   sentencedf$Correct <- LETTERS[typelist]
   senttypes <- c('The X is above the Y and next to the Z',
     'The X is below the Y and next to the Z',
@@ -136,11 +137,12 @@ gdf$b3[w] <- paste0("Item_",1:nitem,'C.png')
 gdf$b4[w] <- paste0("Item_",1:nitem,'D.png')
 gdf$answer[w]<- paste0("Item_",1:nitem,sentencedf$Correct,'.png')
 
-write.csv(gdf,paste0(mydir,'GorillaSheet.csv'),row.names=F)
+write.csv(gdf,paste0(mydir,'GorillaSheetB.csv'),row.names=F)
 
 #######################################################################
 # Now do the same but for 'between' sentences
-
+set.seed(3)
+mydir <- "~/Dropbox/magic images/assembled_picsA/"
 
 #function to assemble pics
 assemblepicsb <- function(itemname,imX,imY,imZ){
@@ -155,8 +157,11 @@ sentencedfb <- data.frame(matrix(NA,nrow=24,ncol=2))
 colnames(sentencedfb)<-c('Sentence','Correct')
 
 nitem=24
-typelist <- c(1,2,3,4,3,2,4,1,3,1,2,4,4,3,2,1,2,1,3,4,3,1,4,2) #quasirandom order of items
+typelist <- c(4,2,4,1,3,2,4,1,3,3,2,1,4,3,2,1,2,1,1,4,3,3,4,2) #quasirandom order of items
 
+#shuffle order of pictures
+myindex <- sample(nrow(myitems))
+myitems <- myitems[myindex,]
 for (i in 1:nitem){
   mynum1<-(3*(i-1)+1)
   Xword <- myitems$pic[mynum1]
@@ -223,4 +228,23 @@ for (i in 1:nitem){
 
 write.csv(sentencedfb,paste0(mydir,'SentenceList.csv'),row.names=T)
 
+#Make a spreadsheet for Gorilla
+gvars <- c('randomise_blocks','randomise_trials','display',	'answer','b1','b2','b3','b4',
+           'Sentence',	'flag_trial','permutation')
+gdf <- data.frame(matrix(NA,nrow=(2+nitem*3),ncol=length(gvars)))
+colnames(gdf)<-gvars
+rowbits<-c('fixation','recall','break')
+gdf$display<-c('Introduction',rep(rowbits,nitem),'end')
+gdf$flag_trial[2:(nrow(gdf)-1)]<-rep(1:nitem,each=3)
+w<-which(gdf$display=='recall')
+gdf$permutation[w]<-1:nitem
+allsent<-  paste0(gsub(" ", "_", sentencedfb$Sentence),'.mp3')
+gdf$Sentence[w]<-allsent
+gdf$b1[w] <- paste0("Item_",1:nitem,'A.png')
+gdf$b2[w] <- paste0("Item_",1:nitem,'B.png')
+gdf$b3[w] <- paste0("Item_",1:nitem,'C.png')
+gdf$b4[w] <- paste0("Item_",1:nitem,'D.png')
+gdf$answer[w]<- paste0("Item_",1:nitem,sentencedfb$Correct,'.png')
+
+write.csv(gdf,paste0(mydir,'GorillaSheetA.csv'),row.names=F)
 

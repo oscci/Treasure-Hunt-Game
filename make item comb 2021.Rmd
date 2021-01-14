@@ -1,0 +1,607 @@
+---
+title: "Item combinations"
+output: html_notebook
+---
+```{r loadpackages}
+
+library(tidyverse)   # data wrangling and visualisation
+library(gtools) #for permutations
+```
+Used to generate item combinations for 2020 version of Treasure Hunt.
+#Update 14th Jan 2021
+Generating spreadsheets for version in Registered Report with different prepositions in Rep and Novel.
+
+Need to set.seed to make spreadsheets reproducible.
+
+## Two sentence frames:
+
+  FRAME A: The X is above/underneath the Y and beside the Z  OR The X is beside the Y and above/underneath the Z
+   eg 	  
+“The bed is above the tree and beside the jug" 
+
+  FRAME B:  The X is on top of/below the Y and next to the Z  OR The X is next to the Y and on top of/below the Z
+
+Each child gets items from both sets, alternating
+Two sets counterbalanced, so one frame is used only for Repeated items, and one for Novel items.
+
+These frames selected to be equivalent in structure/difficulty /N syllables.
+
+Here we will simplify the sentence generation process by just generating items for frame A for both R and N, but then using search and replace to change the prepositions for either the R set or the N set.
+
+## Item sets
+In addition, we'll make 2 sets for each type so we can avoid any item-specific effects
+
+This means we will end up with 4 possible sets for each child to be assigned to:
+
+Set ANBR1  - i.e. first set with sentence frame A as novel, sentence frame B as repeated
+    ANBR2  - 2nd set etc etc
+    ARBN1
+    ARBN2
+    
+	  
+“The bed is above the tree and next to the jug"  
+
+For one stimulus set:
+We create 2 frames x 4 (blocks) x 12 3-item combinations
+This is 96 combinations.
+Currently our stimulus pool is 32 pictured target words
+
+##  Grid position
+denoted in RowColumn format, ie..
+11 12 13 14
+21 22 23 24
+31 32 33 34
+41 42 43 44
+
+Column is then converted to letter
+A1 B1 C1 D1
+A2 B2 C2 D2
+A3 B3 C3 D3
+A4 B4 C4 D4
+
+## Repeated Items
+It is currently set up to select at random the picture that will be pre-placed in the grid (where there is a preplaced item).  So the spoken sentence is repeated but the display may vary. It would be possible to alter this - probably easiest to just do this at the final stage after spreadsheet created, at which point one could identify repeated items and just overwrite them so that each of the items was constant. But I think we are mostly interested in the impact of improved comprehension from hearing a repeated sentence, and that to have this to some extent dissociated from the visual display is a good thing. This has now been clarified when describing methods
+
+
+```{r items}
+set.seed(20) #make reproducible
+myitems <- c( "clock","flag","car","cup","watch","kite","van","jug","wheel", "hen", "heart",  "lamp", "bat", "chain",  "spoon", "bed", "scarf", "pen", "leaf", "snail", "fly", "boat",  "crab", "drum", "box", "eye",  "leg", "fox",  "shirt", "bell",  "door", "plug",  "tree") 
+itemcount<-length(myitems)
+#NB These have been ordered so that 4 potentially confusible pairs occur at the front of the list; these are
+# clock-watch
+# flag-kite
+# car-van
+# cup-jug
+# This ordering will make it relatively easy to ensure they don't co-occur in an item - see below
+
+#get all permutations of 3 different items
+permlist <- as.data.frame(permutations(n=32,r=3,v=1:itemcount,repeats.allowed=F))
+```
+
+This generates all possible 3-item permutations (ie ordered combinations) of the 32 words. There are 29760 of them, so we have plenty to choose from.
+
+To create our experimental list, we could aim to select in quasirandom fashion, as follows:
+
+a) Avoid any pictures that are phonologically/visually/semantically confusible occurring together in one sentence
+b) Avoid adjacent sentences with any of the same words
+
+To do (a) we'd need to specify lists of items that should not occur together, that we can check against
+
+To do (b), just need a simple check.
+
+So approach could be select 96 triplets by sampling at random, and accept each one if it meets criteria.
+
+```{r sampletrios}
+nrepstim <- 4 #these are N items that will be repeated per session
+nreps <-3  #N repetitions of each repeated item within a session
+
+itemtype<-c('R01','R02','R03','R04','N01','N02','N03','N04','N05','N06','N07','N08','N09','N10','N11','N12')
+
+nframes<-2 #just two frames which will be counterbalanced
+nsess<-8 #to allow for second set: 
+ntrio<-length(itemtype)#make data frame to hold trios
+mytrio <- data.frame(matrix(NA,nrow=nframes*nsess*ntrio,ncol=13))
+#Note we'll create a frame to hold 5 pictures, but for now are just selecting 3. The other columns will hold distractors and are allocated later. Item 5 can be used later on to substitute in the choice array for the picture fixed in the grid.
+colnames(mytrio)<-c('num1','num2','num3','num4','num5','pic1','pic2','pic3','pic4','pic5','itemtype','frame','session')
+myn <- nrow(permlist)
+counter <- 0
+nitems <- 12 #items per session per frame (ie sentence type)
+#NB we will use this later on when compiling Gorilla sheet. Note that because of repeated items, the N trios is less than this.
+#Currently this is N items per session, with 4 repeated items presented 3 times plus one novel item for each
+for(frame in 1:nframes){
+  for(session in 1:nsess){
+    for (item in 1:ntrio){
+      counter <- counter+1
+      #While loop here - these are dangerous: can get stuck in them!
+      #But we start with mymatch set to 1 to ensure we enter the loop, and we only exit it when mymatch changes to zero - which it will do when there is no match with the prior 4 items
+      mymatch<-1
+      while(mymatch==1){
+        thisone <- sample(myn,1) #we will return here to resample if there is overlap in the pictures within last 4 items
+        mytrio[counter,1:3]<-permlist[thisone,1:3]
+        #we'll check the prior 4 items to ensure no overlap in pics
+        testlist<-vector()
+        for (j in 1:3){
+          myindex<-counter-j
+          if(myindex>0) {
+            testlist<-c(testlist,mytrio[myindex,1:3])
+          }
+        }
+        w<-which(mytrio[counter,1:3]%in% testlist)
+        
+        #We now check if the items contain the pairing 1-5,2-6,3-7 or 4-8
+        #These are pictures that may be confused, so to be avoided within an item
+        w2=0 #initialise to flag no conflicting items
+        w1<-which(mytrio[counter,1:3]<5) #any item code less than 5?
+        if(length(w1)>0){
+          badseq<-mytrio[counter,w1]+4 #items that conflict
+          w2<-which(mytrio[counter,1:3]%in% badseq) #w2 will be a number from 1 to 3 if there are conflicting items
+          if (length(w2)==0) {w2 <- 0} 
+          #when length(w2) is > 0 we have 2 items in conflicct so need to resample
+        }
+        
+        if((length(w)==0)&(w2==0)) #no overlap with prior items and no conflicting items!!
+        {mymatch <-0} #can exit while loop because no overlap
+      }
+      
+      mytrio$itemtype[counter]<-itemtype[item]
+      mytrio$frame[counter]<-frame
+      mytrio$session[counter]<-session
+      
+    }
+  }
+}
+
+```
+
+This seemed to work!  
+We have 256 trios, with no overlap in items between items within 4-items apart. I think we also have avoided having conflicting pairs of pictures together in an item.
+
+We need to also specify distractors for pic4 (and also pic5 - 5 pics needed if one is already placed! - this added 27/7/20) . 
+We just add a picture that can be anything, provided it isn't already in the array.
+Except they need also to be screened to avoid the confusible pairs.
+This is done by just creating a list of 'used numbers' and as well as including those already selected for pic1-3, we include the confusible paired item in this list where necessary
+This is also set up to avoid reusing distractors from previous trial - but NB actual presentation order is interspersed novel/random, so this is not going to work! Have left the code in, just in case we wanted to adjust at a later point. The main reason for adding distractors here is that we still have numeric codes for the stimuli. Script now modified so these are retained.
+
+We need to use the same stimuli for repeated items across all sessions.
+Easiest to do this by overwriting items.
+We want to use session 1 versions for repeated items for all subsequent sessions.
+I've moved this BEFORE the selection of distractors so that we get some variation in distractors for the repeated items. 
+
+```{r copyrepeated}
+myblock<-mytrio[1:nrepstim,1:nreps] #block for repeated sentences: to copy for later sessions
+#NB this is hard coded and will need to change if we alter the N repeated sentences!
+#Currently it is 12 because we have 4 versions of 3 repeated sentences
+startrows<-which(mytrio$itemtype=='R01') #first repeated itemtype 
+
+for (overwrite in startrows){
+  mytrio[overwrite[1]:(overwrite[1]+nrepstim-1),1:nreps]<-myblock
+}
+
+```
+
+
+```{r add.distractors}
+for (p in 1:2){ #need to do this twice, so have 5 pics in all!
+  for (i in 1:nrow(mytrio)){
+    allnumbers <- 1:length(myitems)
+    usednumbers <- c(mytrio$num1[i],mytrio$num2[i],mytrio$num3[i])
+    if(p==2){usednumbers <- c(usednumbers,mytrio$num4[i])}
+    #now add to this list the paired item for any that are in range 1-4
+    u1<-which(usednumbers<5)
+    if(length(u1)>0) {usednumbers<-c(usednumbers,usednumbers[u1]+4)}
+    #now add to this list the paired item for any that are in range 5-8
+    
+    u2 <- intersect(which(usednumbers<9),which(usednumbers>4))
+    if(length(u2)>0) {usednumbers<-c(usednumbers,usednumbers[u2]-4)}
+    possiblenumbers <- allnumbers[-usednumbers]
+    
+    #Use different items 4 than in previous trial
+    if (i>1){usednumbers<-c(usednumbers,mytrio$num1[(i-1)],mytrio$num2[(i-1)],mytrio$num3[(i-1)],mytrio$num4[(i-1)])}
+    distractors <- sample(possiblenumbers,1)
+    ifelse(p==1, mytrio$num4[i]<-distractors[1],mytrio$num5[i]<-distractors[1])
+    
+  }
+}
+```
+
+
+
+So now we need to create the sentences and the spreadsheets.
+For each frame there is a total of 4 sentence types.
+Specify with X, Y, Z as placeholders and then replace with words from mytrio.
+
+For each sentence type, can specify all possible locations
+
+
+
+```{r makelookuptable}
+#convert number codes to picture names -make copy of mytrio before doing this
+
+mytrio$pic1<-myitems[mytrio$num1]
+mytrio$pic2<-myitems[mytrio$num2]
+mytrio$pic3<-myitems[mytrio$num3]
+mytrio$pic4<-myitems[mytrio$num4]
+mytrio$pic5<-myitems[mytrio$num5]
+#4 sentencetypes for frame A then four types for frame B
+
+sentenceform<- c('The_X_is_above_the_Y_and_next_to_the_Z',
+                  'The_X_is_next_to_the_Y_and_above_the_Z',
+                  'The_X_is_underneath_the_Y_and_next_to_the_Z',
+                  'The_X_is_next_to_the_Y_and_underneath_the_Z',
+                  'The_X_is_on_top_of_the_Y_and_beside_the_Z',
+                  'The_X_is_beside_the_Y_and_on_top_of_the_Z',
+                  'The_X_is_below_the_Y_and_beside_the_Z',
+                  'The_X_is_beside_the_Y_and_below_the_Z')
+
+
+#Make grid that assigns sentence depending on item type and frame
+#We'll use this as a lookup table to create sentence for each item in mytrio
+myt<-data.frame(table(mytrio$itemtype,mytrio$frame)) #construct data frame from table
+colnames(myt)<-c('itemtype','frame','N')
+myt<-myt[,-3] #lose 3rd column
+
+
+
+myt$sentence <-0 #initialise
+#We have to hard code the allocation of sentence types to frames
+
+myt$frame<-c(rep(1,4),rep(2,4),rep(1,4),rep(2,4))
+
+#we have 4 possible sentence types for each frame- just sequence through these.
+
+myseq<-1:8
+myt$sentence<-myseq
+
+
+
+
+```
+
+
+
+
+
+We'll compile specific sentences in a loop - just find the itemtype and frame, and then can look up the sentence skeleton in myt.
+At this point we also add the positions in the Gorilla grid, selecting at random from possible positions for this frame. Note that once we know the position of X, the position of Y and Z can be deduced if we use a numeric code, so that you add 10 for each row in the grid and add 1 for each column
+
+```{r compilesentences}
+mytrio$sentence<-NA #initialise
+mytrio$Xpos <-NA
+mytrio$Ypos <-NA
+mytrio$Zpos <-NA
+mytrio$Y1pos <-NA #not sure if needed, but used in cases where more than one possible correct array
+mytrio$Z1pos <-NA
+
+mytrio$sentcode <-1:4
+w<-which(mytrio$frame==2)
+mytrio$sentcode[w]<-5:8
+
+# Grid positions denoted in RowColumn format, ie..
+# 11 12 13 14
+# 21 22 23 24
+# 31 32 33 34
+# 41 42 43 44
+
+posX5 <- c(21,22,23,31,32,33) #possible positions for X for both frames
+
+for ( i in 1:nrow(mytrio)){
+
+  myitem<-mytrio$itemtype[i]
+  myframe<-mytrio$frame[i]
+  sentencetype<-mytrio$sentcode[i]
+  
+  
+  # allocate grid positions, depending on the sentence type
+     #eg 'The_X_is_above_the_Y_and_next_to_the_Z'
+    if (sentencetype==1){
+    mytrio$Xpos[i] <- sample(posX5,1)
+    mytrio$Ypos[i]<-mytrio$Xpos[i]+10 #this is position immediately below
+    mytrio$Zpos[i]<-mytrio$Xpos[i]+1
+    mytrio$Z1pos[i]<-mytrio$Xpos[i]-1
+  }
+  
+  if (sentencetype==2){
+    #'The_X_is_below_the_Y_and_next_to_the_Z'
+    mytrio$Xpos[i] <- sample(posX5,1)
+    mytrio$Ypos[i]<-mytrio$Xpos[i]-10 #this is position immediately above
+    mytrio$Zpos[i]<-mytrio$Xpos[i]+1
+    
+  }
+  
+  if (sentencetype==3){
+    #'The_X_is_next_to_the_Y_and_above_the_Z'
+    mytrio$Xpos[i] <- sample(posX5,1)
+    mytrio$Ypos[i]<-mytrio$Xpos[i]+1
+    mytrio$Zpos[i]<-mytrio$Xpos[i]+10 #this is position immediately below
+    
+  }
+  
+  if (sentencetype==4){
+    #'The_X_is_next_to_the_Y_and_below_the_Z'
+    mytrio$Xpos[i] <- sample(posX5,1)
+    mytrio$Ypos[i]<-mytrio$Xpos[i]+1 
+    mytrio$Zpos[i]<-mytrio$Xpos[i]-10 #this is position immediately below
+    
+  }
+  
+      if (sentencetype==5){
+    mytrio$Xpos[i] <- sample(posX5,1)
+    mytrio$Ypos[i]<-mytrio$Xpos[i]+10 #this is position immediately below
+    mytrio$Zpos[i]<-mytrio$Xpos[i]+1
+    mytrio$Z1pos[i]<-mytrio$Xpos[i]-1
+  }
+  
+  if (sentencetype==6){
+ 
+    mytrio$Xpos[i] <- sample(posX5,1)
+    mytrio$Ypos[i]<-mytrio$Xpos[i]-10 #this is position immediately above
+    mytrio$Zpos[i]<-mytrio$Xpos[i]+1
+    
+  }
+  
+  if (sentencetype==7){
+
+    mytrio$Xpos[i] <- sample(posX5,1)
+    mytrio$Ypos[i]<-mytrio$Xpos[i]+1
+    mytrio$Zpos[i]<-mytrio$Xpos[i]+10 #this is position immediately below
+    
+  }
+  
+  if (sentencetype==8){
+
+    mytrio$Xpos[i] <- sample(posX5,1)
+    mytrio$Ypos[i]<-mytrio$Xpos[i]+1 
+    mytrio$Zpos[i]<-mytrio$Xpos[i]-10 #this is position immediately below
+    
+  }
+  
+  #now compile the sentence
+  mysent <-sentenceform[sentencetype]
+  #Use gsub to just insert the relevant picture word - substitute for X, Y, Z
+  mysent1 <- gsub("X", mytrio$pic1[i], mysent)
+  mysent1 <- gsub("Y",mytrio$pic2[i],mysent1)
+ mysent1 <- gsub("Z",mytrio$pic3[i],mysent1)
+  mytrio$sentence[i]<-mysent1
+  
+
+  
+}
+```
+At this point, pictures X Y and Z are in order 1, 2, and 3. 
+Need to add list of pictures in random order - easiest just to do this with new columns , called choice
+```{r randompictures}
+
+mytrio$choice1<-NA
+mytrio$choice2<-NA
+mytrio$choice3<-NA
+mytrio$choice4<-NA
+mytrio$choice5<-NA
+
+
+collist <- which(colnames(mytrio) %in% c('pic1','pic2','pic3','pic4','pic5'))
+for (i in 1:nrow(mytrio)){
+  nucollist <- which(colnames(mytrio) %in% c('choice1','choice2','choice3','choice4','choice5'))
+}
+for (i in 1:nrow(mytrio)){
+  collist <- sample(collist) #scramble order of columns
+  mytrio[i,nucollist]<-mytrio[i,collist]
+}
+
+```
+Next we need to put these items into a spreadsheet in the format needed by Gorilla.
+
+
+
+```{r makespreadsheet}
+spreadsheetcols <- c("A1", "B1", "C1", "D1", "A2", "B2", "C2", "D2", "A3", "B3", "C3", "D3", "A4", "B4", "C4", "D4", "Choice1", "Choice2", "Choice3", "Choice4", "Choice5","Clue1", "Answer1Choice", "Answer1Cell", "Answer2Choice", "Answer2Cell", "Answer3Choice", "Answer3Cell", "Answer4Choice", "Answer4Cell")
+#We'll add columns that denote item identifier, session, and frame
+spreadsheetcols <-c("Item","Session","frame",spreadsheetcols)
+
+setnames<-c('ANBR1','ANBR2','ARBN1','ARBN2')
+#find columns that hold information about which slots in grid are open
+
+#find columns that hold positions for correct answers
+posstart <- which(colnames(mytrio)=='Xpos') #columnsin my trios with pos codes
+
+#Make list of matrix positions that we can map onto cols A1, etc
+matrixpos <- c(11,12,13,14,21,22,23,24,31,32,33,34,41,42,43,44)
+alphanames <- c("A1", "B1", "C1", "D1", "A2", "B2", "C2", "D2", "A3", "B3", "C3", "D3", "A4", "B4", "C4", "D4")
+#Easiest if we just make array with 44 spaces and put codes in where needed
+myalphacodes <-vector()
+for(a in 1:length(matrixpos)){
+  myalphacodes[matrixpos[a]]<-alphanames[a]
+}
+
+#now populate spreadsheet: alternate repeated items (1-4) and novel.
+#Four Sets 
+#Set ANBR1  - i.e. first set with sentence frame A as novel, sentence frame B as repeated
+#    ANBR2  - 2nd set etc etc
+#    ARBN1
+#    ARBN2
+for(myset in 1:4){
+
+itemorder <- c(1,21,2,22,3,23,4,24,1,25,2,26,3,27,4,28,1,29,2,30,3,31,4,32) #frame A repeated
+if (myset>3){
+  itemorder <- c(17,5,18,6,19,7,20,8,17,9,18,10,19,11,20,12,17,13,18,14,19,15,20,16) #frame B repeated
+}
+
+maxsession <- 4
+
+for (mysession in 1:maxsession){
+ 
+    myspreadsheet <- data.frame(matrix(NA,ncol=length(spreadsheetcols),nrow=nitems*2))
+    colnames(myspreadsheet) <- spreadsheetcols
+    gridstart <- which(colnames(myspreadsheet)=='A1')
+    gridcols <- gridstart:gridstart+15
+    maxrow <- nrow(myspreadsheet)
+    #Make list of items for this session
+    thisbatch <- filter(mytrio,session==mysession)
+    
+    myspreadsheet$Item <- thisbatch$itemtype[itemorder]
+    myspreadsheet$Session <- thisbatch$session[itemorder]
+    myspreadsheet$frame <- thisbatch$frame[itemorder]
+    myspreadsheet$Choice1 <- thisbatch$choice1[itemorder]
+    myspreadsheet$Choice2 <- thisbatch$choice2[itemorder]
+    myspreadsheet$Choice3 <- thisbatch$choice3[itemorder]
+    myspreadsheet$Choice4 <- thisbatch$choice4[itemorder]
+    myspreadsheet$Choice5 <- thisbatch$choice5[itemorder]
+    myspreadsheet$Clue1 <- thisbatch$sentence[itemorder]
+    myspreadsheet$Answer1Choice <- thisbatch$pic1[itemorder]
+    myspreadsheet$Answer1Cell <- thisbatch$Xpos[itemorder]
+    myspreadsheet$Answer2Choice <- thisbatch$pic2[itemorder]
+    myspreadsheet$Answer2Cell <- thisbatch$Ypos[itemorder]
+    myspreadsheet$Answer3Choice <- thisbatch$pic3[itemorder]
+    myspreadsheet$Answer3Cell <- thisbatch$Zpos[itemorder]
+    myspreadsheet$Answer4Choice <- thisbatch$pic4[itemorder]
+    myspreadsheet$Answer4Cell <- thisbatch$Y1pos[itemorder]
+    myspreadsheet$Answer5Choice <- thisbatch$pic5[itemorder]
+    myspreadsheet$Answer5Cell <- thisbatch$Z1pos[itemorder]
+    
+    startcell <- which(colnames(myspreadsheet)=='Answer1Cell')#find starting col for answers
+    choicestart <- which(colnames(myspreadsheet)=='Choice1') #find starting col for choices
+    
+    for (n in 1:nrow(myspreadsheet)){
+      starter <- startcell-2 #initialise
+      #frames 1 and 3 have pre-populated grid with one item
+      myitem <- 0 #initialise - no prepopulated cells
+      myitem<-sample(1:2,1)#either X or Y item
+      mypiccols <-c((startcell-1),(startcell+1)) #cols for X and Y pictures
+      myitem<-myitem+1 #select Y or Z
+      mypiccols <-c(mypiccols,startcell+3) #include col for Z item
+      
+      
+      for (m in 1:3){ #X, Y, Z, Y1 and Z1
+        
+        starter<-starter+2 #cell columns are 2 apart; on 1st run through, go back to Answer1Cell
+        w<-which(matrixpos==myspreadsheet[n,starter]) #find matrix position
+        if(length(w)>0){
+          myspreadsheet[n,(w+gridstart-1)] <- 'open' #col corresponding to position for this item
+          if(myitem==m){ #item to place in grid - 1st or 2nd in sentence
+            placeditem<-myspreadsheet[n,mypiccols[myitem]] 
+            placepos <- w+gridstart-1
+            myspreadsheet[n,placepos]<-placeditem #place item in grid
+            #if frame 1, place open for positions above and below
+     
+            #Now ensure placed item is not in choice array (pics 1-4)
+            placedchoice <- which(myspreadsheet[n,choicestart:(choicestart+3)]==placeditem)
+            if(length(placedchoice)>0){
+              myspreadsheet[n,(choicestart+placedchoice-1)]<-myspreadsheet[n,(choicestart+4)]
+              #we write Choice 5 over the Choice for the placed item, so choice array doesn't contain the placed item.     
+            }
+          }
+        }
+        
+      }
+      
+    } #next n
+#------------------------------------------------------------------------------------   
+#All rows done for this spreadsheet.
+#New generic chunk to detect fixed items and ensure they are not in the answer columns.
+#------------------------------------------------------------------------------------   
+   
+    myA1 <- which(colnames(myspreadsheet)=='A1')
+    myans1 <-which(colnames(myspreadsheet)=='Answer1Choice')
+    for (n in 1:nrow(myspreadsheet)){
+     myplaced<-unname(unlist(myspreadsheet[n,myA1:(myA1+15)]))
+     myanswers <- unname(unlist(myspreadsheet[n,myans1:(myans1+6)]))
+     myfound <-intersect(myplaced,myitems)  #find item from original list of pictures
+     w<-which(myanswers==myfound)
+     if(length(w)<0){
+      myspreadsheet[n,(myans1+w-1):(myans1+w)]<-NA #both AnswerChoice and AnswerCell set to NA
+    }
+} #next n
+    
+    
+#------------------------------------------------------------------------------------   #Convert numeric codes for grid cells to alphanumeric 
+#------------------------------------------------------------------------------------   
+
+    ans1cell <- which(colnames(myspreadsheet)=='Answer1Cell')
+    for (a in c(ans1cell,(ans1cell+2),(ans1cell+4))){
+      w<-which(myspreadsheet[,a]>0)
+      if(length(w)>0){
+        myspreadsheet[w,a]<-myalphacodes[myspreadsheet[w,a]]
+      }
+      w1<-which(myspreadsheet[,a]==0)
+      myspreadsheet[w1,a]<-NA
+    } #next a (ie next cell column)
+    
+    spreadname<-paste0('./sheets/',setnames[myset],'Session',mysession,'.csv') # changed to work with gorilla mechanic
+    
+    w<-which(colnames(myspreadsheet)=='Choice5')
+    myspreadsheet<-myspreadsheet[,-w]
+    #With write.table we can ensure that NAs are saved as blanks
+    write.table(myspreadsheet,spreadname,   na = "",
+                row.names = FALSE,
+                col.names = TRUE,
+                sep = ",")
+    
+    
+} #next session
+  
+} #next set
+
+```
+
+
+Make a little spreadsheet with just N items per frame for testing with Gorilla
+
+```{r maketestsheet}
+#Now set to save 6 at each frame, but could alter this
+#Examples of frames 1,2,3,4 are saved 
+thisframe <- 0 
+Nperframe <- 6
+for (myframe in c(1,2,3,4)){
+  thisframe<-thisframe+1
+  myfilename <- paste0('./sheets/sheetSession1frame_',myframe,'.csv')
+  testbit <- read.csv(myfilename,stringsAsFactors=F)
+  if(myframe==1){testsheet<-testbit[1:(4*Nperframe),]}
+  if(myframe>1){
+    theserows<-((thisframe-1)*Nperframe+1):(thisframe*Nperframe)
+    testsheet[theserows,]<-testbit[1:Nperframe,]
+  }
+  
+}
+#With write.table we can ensure that NAs are saved as blanks
+write.table(testsheet,'./sheets/testsheet.csv',   na = "",
+            row.names = FALSE,
+            col.names = FALSE,
+            sep = ",")
+```
+
+
+## Sound files
+
+Now that we have the stimulus, we need to create stimuli. This is done via google voice. 
+
+Dorothy, I had originally pushed the .json to github but Google then google emailed to say that this might comprmise our credentials. So I've taken it down. I'll send over if you need it.
+
+I was not able to install googleLanguageR via normal interface, but I did manage it via
+remotes::install_github("ropensci/googleLanguageR") - however, this seemed unhappy with versoin of R that I have
+
+```{r soundGenerator}
+makesounds<-1 #just make this chunk optional as it crashes if you don't have json properly installed
+if (makesounds==1){
+  library("googleLanguageR")
+  # need json file in directory to start this
+  gl_auth("sage-instrument-243609-abad49e474f9.json")
+  
+  # now pull all csv names in
+  myfiles = list.files(path="./sheets/", pattern="*.csv", full.names=TRUE)
+  # read them
+  dat_csv = plyr::ldply(myfiles, read_csv)
+  
+  # now create the frame of info that we need
+  items <- data.frame(matrix(NA,nrow=length(dat_csv$Clue1),ncol=2))
+  colnames(items) <- c("label", "stim")
+  items$label <- dat_csv$Clue1
+  items$stim <- str_replace_all(items$label, fixed("_"), " ")
+  # now run gl_talk to get the sounds
+  mysent<-vector()
+  for (i in 1:length(items$stim)) {
+    gl_talk(items$stim[i],
+            gender = "FEMALE", languageCode = "en-GB", speakingRate= .8, audioEncoding = "MP3", 
+            output = (paste0("./mp3/",items$label[i],".mp3")))
+  }
+  write.csv(items$label,'./mp3/items_created.csv')
+}
+```

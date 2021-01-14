@@ -504,11 +504,10 @@ for (mysession in 1:maxsession){
     for (n in 1:nrow(myspreadsheet)){
      myplaced<-unname(unlist(myspreadsheet[n,myA1:(myA1+15)]))
      myanswers <- unname(unlist(myspreadsheet[n,myans1:(myans1+6)]))
-     myfound <-intersect(myplaced,myitems)  #find item from original list of pictures
+     myfound <-intersect(myplaced,myanswers)  #find item from picture set
      w<-which(myanswers==myfound)
-     if(length(w)<0){
       myspreadsheet[n,(myans1+w-1):(myans1+w)]<-NA #both AnswerChoice and AnswerCell set to NA
-    }
+    
 } #next n
     
     

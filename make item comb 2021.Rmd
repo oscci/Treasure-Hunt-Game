@@ -67,7 +67,7 @@ It is currently set up to select at random the picture that will be pre-placed i
 
 
 ```{r items}
-#set.seed(20) #make reproducible
+set.seed(20) #make reproducible
 myitems <- c( "clock","flag","car","cup","watch","kite","van","jug","wheel", "hen", "heart",  "lamp", "bat", "chain",  "spoon", "bed", "scarf", "pen", "leaf", "snail", "fly", "boat",  "crab", "drum", "box", "eye",  "leg", "fox",  "shirt", "bell",  "door", "plug",  "tree") 
 itemcount<-length(myitems)
 #NB These have been ordered so that 4 potentially confusible pairs occur at the front of the list; these are
@@ -427,7 +427,7 @@ for(a in 1:length(matrixpos)){
 #    ANBR2  - 2nd set etc etc
 #    ARBN1
 #    ARBN2
-for(myset in allset){  #NB if you want a different set of Repeated items for each set, can re-run for just one set here - will still keep sample repeated item for each session.
+for(myset in 1:allset){  #NB if you want a different set of Repeated items for each set, can re-run for just one set here - will still keep sample repeated item for each session.
 
 itemorder <- c(1,21,2,22,3,23,4,24,1,25,2,26,3,27,4,28,1,29,2,30,3,31,4,32) #frame A repeated
 if (myset>3){

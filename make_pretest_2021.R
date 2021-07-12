@@ -4,6 +4,7 @@
 
 #Couldn't seem to get this to work as notebook?, hence basic R script
 
+# 12 Jul 2021: updated by DVMB to make distractors harder so that needed to decode both parts of the sentence to succeed.
 
 # Pictures from Multipic
 # Link: http://www.bcbl.eu/databases/multipic/
@@ -13,7 +14,7 @@
 library(groundhog)
 groundhog.library(magick,"2020-12-01")
 
-thisset <- 'B' #switch to B to make posttest
+thisset <- 'A' #switch to B to make posttest
 picdir <- "~/Dropbox/magic images/colored PNG/"
 mydir <-paste0("~/Dropbox/magic images/assembled_pics",thisset,"/")
 
@@ -102,10 +103,12 @@ imX<-image_append(image_scale(imageX, "100"), stack = TRUE)
 imY<-image_append(image_scale(imageY, "100"), stack = TRUE)
 imZ<-image_append(image_scale(imageZ, "100"), stack = TRUE)
 
-itemname <- paste0(mydir,'Item_',i,'A.png')
 
 # For correct and distractors we need to create all 4 combination types
+
 #array type A : X and Z side by side, Y below X - corresponds to sentence type 1-2
+itemname <- paste0(mydir,'Item_',i,'A.png')
+
 top1<-imX
 top2<-imZ
 bot1<-imY
@@ -120,7 +123,7 @@ bot1<-imZ
 bot2<-blank
 assemblepics(itemname,top1,top2,bot1,bot2)
 
-#array type C: X and Z side by side and below Y - sentence type 5-6
+#array type C1: X and Z side by side and below Y - sentence type 5-6
 itemname <- paste0(mydir,'Item_',i,'C.png')
 top1<-imY
 top2<-blank
@@ -128,8 +131,8 @@ bot1<-imX
 bot2<-imZ
 assemblepics(itemname,top1,top2,bot1,bot2)
 
-
 # Array type D: The X is next to the Y and below the Z - sentence type 7-8
+if (j %in% c(3,4,7,8)){
 itemname <- paste0(mydir,'Item_',i,'D.png')
 top2<-imZ
 top1<-blank
@@ -137,7 +140,40 @@ bot1<-imY
 bot2<-imX
 assemblepics(itemname,top1,top2,bot1,bot2)
 
- }
+}
+  
+  #Make hard distractors that can't be solved just by first phrase
+  if(j<3){
+  # Array type D1: The X is above to the Y and Y is next to the Z - hard distractor for 1-2
+  itemname <- paste0(mydir,'Item_',i,'D.png')
+  top2<-imX
+  top1<-blank
+  bot2<-imY
+  bot1<-imZ
+  assemblepics(itemname,top1,top2,bot1,bot2)
+  }
+
+#Make hard distractors that can't be solved just by first phrase
+if(j %in% 3:4){
+  # Array type D1: The X is above to the Y and Y is next to the Z - hard distractor for 1-2
+  itemname <- paste0(mydir,'Item_',i,'D.png')
+  top1<-imX
+  top2<-blank
+  bot2<-imY
+  bot1<-imZ
+  assemblepics(itemname,top1,top2,bot1,bot2)
+}
+
+  if(j %in% 5:6){
+  # Array type D2: The X is below to the Y and Y is next to the Z - hard distractor for 5-6
+  itemname <- paste0(mydir,'Item_',i,'D.png')
+  top2<-imY
+  top1<-imZ
+  bot2<-imX
+  bot1<-blank
+  assemblepics(itemname,top1,top2,bot1,bot2)
+  }
+}
 }
 write.csv(sentencedf,paste0(mydir,'SentenceList.csv'),row.names=T)
 

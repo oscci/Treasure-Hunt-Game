@@ -583,6 +583,46 @@ write.table(testsheet,'./sheets/testsheet.csv',   na = "",
             sep = ",")
 ```
 
+## Convert to blocked version (revised follow reviews at Stage 1)
+
+```{r blocked}
+mydir <- "./sheets"
+myfiles <- list.files(path=mydir, pattern= "*.csv", full.names=TRUE)
+# loop
+for (i in 1:length(myfiles)) {
+  file <- myfiles[i]
+  
+  dat <- read.csv(file,   na = "")
+    listA <- dat[order(dat[,"frame"], decreasing = FALSE),]
+    listB <- dat[order(dat[,"frame"], decreasing = TRUE),]
+  
+  if((i%%1)==0){ # if odd value in loop label A,B,A,B
+  #With write.table we can ensure that NAs are saved as blanks
+  write.table(listA,paste0('./sheets/', substr(file, 10, 21), '_listA_', substr(file, 22, 22), '.csv'),   na = "",
+            row.names = FALSE,
+            col.names = TRUE,
+            sep = ",")
+    #With write.table we can ensure that NAs are saved as blanks
+    write.table(listB,paste0('./sheets/', substr(file, 10, 21), '_listB_', substr(file, 22, 22), '.csv'),   na = "",
+            row.names = FALSE,
+            col.names = TRUE,
+            sep = ",")
+  }
+  if((i%%2)==0){ # if even value in loop label B,A,B,A
+  #With write.table we can ensure that NAs are saved as blanks
+  write.table(listA,paste0('./sheets/', substr(file, 10, 21), '_listB_', substr(file, 22, 22), '.csv'),   na = "",
+            row.names = FALSE,
+            col.names = TRUE,
+            sep = ",")
+    #With write.table we can ensure that NAs are saved as blanks
+    write.table(listB,paste0('./sheets/', substr(file, 10, 21), '_listA_', substr(file, 22, 22), '.csv'),   na = "",
+            row.names = FALSE,
+            col.names = TRUE,
+            sep = ",")
+  }
+}
+```
+
 
 ## Sound files
 
